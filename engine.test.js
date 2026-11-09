@@ -59,6 +59,8 @@ test('DDA slab entry, boundary direction, parallel exclusion and corner tie', ()
   assert.deepEqual([...hit],[1,1,0]);
   assert.equal(raycast(world,[-1,32,0],[1,0,0],hit,slab),false);
   assert.equal(raycast(world,[0,0,0],[0,0,0],hit,slab),false);
+  assert.equal(raycast(world,[-1,.5,.5],[1,0,0],hit,slab,1.5),false);
+  assert.equal(raycast(world,[-1,.5,.5],[1,0,0],hit,slab,2.5),true);
 });
 
 test('cross-chunk support, separated islands, conservation, and ground impact', () => {
@@ -222,11 +224,19 @@ test('real worker drains queued blasts in order and restores identical seed afte
   const worker = new Worker(new URL('data:text/javascript,'+encodeURIComponent(adapter)));
   t.after(() => worker.terminate());
   let seedMask = 0, blastMask = 0, epoch = 1;
+  let launched = false;
   const order = [], seed = [], held = [];
   await new Promise((resolve,reject) => {
     worker.on('error',reject);
     worker.on('message',m => {
       try {
+        if (m.type === 'launch') {
+          assert.equal(m.id,1);
+          assert.equal(m.epoch,1);
+          assert.ok(m.ms >= 70);
+          launched = true;
+          return;
+        }
         if (m.type === 'mesh') {
           const {buffer,slot} = m;
           if (m.id === 0) {
@@ -259,10 +269,11 @@ test('real worker drains queued blasts in order and restores identical seed afte
         if (epoch === 2) { assert.equal(seedMask,3); resolve(); return; }
         if (m.id === 0) {
           for (let id = 1; id <= QUEUE; id++) {
-            worker.postMessage({type:'blast',epoch,id,origin:[31.5,3.5,34],direction:[0,0,-1],radius:5.5});
+            worker.postMessage({type:'blast',epoch,id,origin:[31.5,3.5,34],direction:[0,0,-1],
+              radius:5.5,reach:64,rocket:id === 1});
           }
         } else {
-          if (m.id === 1) assert.equal(m.mask & 15,15);
+          if (m.id === 1) { assert.ok(launched); assert.equal(m.mask & 15,15); }
           order.push(m.id);
           if (m.id === QUEUE) {
             assert.deepEqual(order,[1,2,3,4]);

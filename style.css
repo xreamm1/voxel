@@ -19,3 +19,18 @@ pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wra
 #move button { width: 44px; height: 44px; padding: 0; touch-action: none }
 #move button:first-child { grid-column: 2; grid-row: 1 }
 #move button:nth-child(n+2) { grid-row: 2 }
+#tools:not([hidden]) { position: fixed; right: 16px; bottom: 94px; display: flex; align-items: center;
+  gap: 6px; padding: 4px; border-radius: 10px; background: #fffd }
+#tool-name { min-width: 76px; text-align: center; font-weight: 750 }
+#loadout { color: #edf5f9; background: #152631; border: 1px solid #55717e;
+  border-radius: 14px; max-width: calc(100vw - 24px); padding: 20px }
+#loadout::backdrop { background: #12222db8 }
+#loadout form { float: right }
+.loadout-tools { display: grid; gap: 6px }
+.loadout-tools button { text-align: left }
+.loadout-tools small { display: block; font-size: 10px; letter-spacing: .09em }
+@media (max-width: 500px) {
+  header span, header strong { display: none }
+  aside { left: 12px; right: auto }
+  aside button { padding: 8px 9px }
+}

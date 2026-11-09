@@ -55,7 +55,7 @@ function start() {
   const material = new T.RawShaderMaterial({
     glslVersion:T.GLSL3,
     uniforms:{palette:{value:['#293940','#ffc736','#17b7b3','#ff6b47',
-      '#f2f5ee','#607584','#9bb0ae','#87b7f2'].map(color => new T.Color(color))}},
+      '#f2f5ee','#607584','#9bb0ae','#70aa5d'].map(color => new T.Color(color))}},
     vertexShader:`
       precision highp float;
       precision highp int;
@@ -162,6 +162,62 @@ function start() {
   chips.count = 1;
   scene.add(chips);
 
+  const actorGeometry = chipGeometry.clone();
+  const actorColors = actorGeometry.getAttribute('chipMaterial');
+  const actor = new T.InstancedMesh(actorGeometry,chipMaterial,9);
+  actor.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  actor.frustumCulled = false;
+  actor.count = 1;
+  actor.setMatrixAt(0,chipTransform.matrix);
+  actor.onAfterRender = () => { if (actor.count) draws[2]++; };
+  scene.add(actor);
+  const root = new T.Object3D(), part = new T.Object3D(), matrix = new T.Matrix4();
+  const rocketFrom = new T.Vector3(), rocketTo = new T.Vector3();
+  let rocket = null, actorCount = 0;
+  function box(x,y,z,sx,sy,sz,color,angle = 0) {
+    part.position.set(x,y,z);
+    part.scale.set(sx,sy,sz);
+    part.rotation.x = angle;
+    part.updateMatrix();
+    matrix.multiplyMatrices(root.matrix,part.matrix);
+    actor.setMatrixAt(actorCount,matrix);
+    actorColors.array[actorCount++] = color;
+  }
+  function showActor(now) {
+    actorCount = 0;
+    if (walk.thirdPerson) {
+      const gait = walk.gait, action = walk.action(now);
+      const swing = walk.tool === 0 ? Math.sin(action*Math.PI)*1.8 : action*.45;
+      root.position.set(walk.x,walk.feet+Math.abs(gait)*.055,walk.z);
+      root.rotation.y = walk.yaw;
+      root.updateMatrix();
+      box(0,1.77,0,.45,.44,.43,4);
+      box(0,1.99,0,.56,.12,.53,1);
+      box(0,1.26,0,.67,.57,.37,2);
+      box(-.45,1.24,gait*.11,.21,.51,.24,4,gait*.65);
+      box(.45,1.24,-gait*.11-swing*.13,.21,.51,.24,4,-gait*.65-swing);
+      box(-.17,.46,-gait*.19,.28,.85,.31,5,-gait*.63);
+      box(.17,.46,gait*.19,.28,.85,.31,5,gait*.63);
+      if (walk.tool === 0) box(.51,1.39+swing*.36,-.28,.22,.53,.34,1,-swing);
+      else box(.51,1.22,-.39+action*.12,.20,.23,walk.tool === 1 ? .63 : .82,3);
+    }
+    if (rocket) {
+      const t = Math.min(1,(now-rocket.start)/rocket.ms);
+      root.position.lerpVectors(rocketFrom,rocketTo,Math.max(0,t));
+      root.rotation.set(0,0,0);
+      root.updateMatrix();
+      box(0,0,0,.19,.19,.19,3);
+      if (t >= 1) rocket = null;
+    }
+    actor.count = actorCount;
+    actor.visible = Boolean(actorCount);
+    if (actorCount) {
+      actor.instanceMatrix.addUpdateRange(0,actorCount*16);
+      actorColors.addUpdateRange(0,actorCount);
+      actor.instanceMatrix.needsUpdate = actorColors.needsUpdate = true;
+    }
+  }
+
   function showChips() {
     let count = 0;
     for (let i = 0; i < chipData.length; i += CHIP_STRIDE) {
@@ -196,6 +252,7 @@ function start() {
   renderer.compile(scene,camera);
   renderer.render(scene,camera);
   chips.visible = false;
+  actor.visible = false;
   if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL 2 failed to initialize the voxel renderer.');
   for (const pair of terrain) for (const entry of pair) entry.mesh.visible = false;
   for (const entry of debris) entry.mesh.visible = false;
@@ -212,6 +269,8 @@ function start() {
     workerAndTransferBytes:7*VOLUME + SLOTS*PACKET_BYTES + 4096 + CHIP_COUNT*61,
     chipCpuGpuBytes:2*(CHIP_COUNT*68 + packed.byteLength + chipGeometry.index.array.byteLength) +
       chipData.byteLength,
+    actorCpuGpuBytes:2*(9*64 + actorColors.array.byteLength + packed.byteLength +
+      chipGeometry.index.array.byteLength),
     telemetryHistogramBytes:params.has('bench') ? 5*1025*4 : 0
   };
   const bench = params.has('bench') ? benchmark(params,metrics,shoot,reset,tracked) : null;
@@ -250,14 +309,19 @@ function start() {
             mixStart[slot] = now;
           }
         }
+      } else if (m.type === 'launch') {
+        if (!ledger.current(m)) return;
+        rocket = {start:performance.now(),ms:m.ms};
+        rocketFrom.fromArray(m.origin);
+        rocketTo.set(m.x,m.y,m.z);
       } else stage.receive(m,ledger,recycle);
     } catch (error) { fail(error.message); console.error(error); }
   };
 
-  function shoot(origin,direction,radius) {
+  function shoot(origin,direction,radius,reach,rocket) {
     const id = ready && !failed ? ledger.accept(performance.now()) : 0;
     bench?.input(Boolean(id));
-    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius});
+    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius,reach,rocket});
   }
   function reset() {
     if (failed) return;
@@ -265,6 +329,7 @@ function start() {
     button.disabled = true;
     walk.ready(false);
     walk.reset();
+    rocket = null;
     status.textContent = 'Preparing a fresh yard…';
     ledger.reset();
     stage.clear(recycle);
@@ -314,7 +379,11 @@ function start() {
     tap = false;
     const rect = canvas.getBoundingClientRect();
     ndc.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
-    if (walk.active) { ndc.set(0,0); walk.aim(); }
+    if (walk.active) {
+      const tool = walk.attack(ray.ray,performance.now());
+      if (tool) shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),tool.radius,tool.reach,walk.tool === 2);
+      return;
+    }
     ray.setFromCamera(ndc,camera);
     shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),4.75);
   });
@@ -410,6 +479,7 @@ function start() {
         }
       }
       if (walk.active) walk.aim(); else controls.update();
+      showActor(now);
       const packet = stage.packets.shift();
       if (packet) stageMesh(packet);
       const commit = stage.ready();

@@ -7,7 +7,23 @@
 <link rel="stylesheet" href="./style.css">
 <canvas aria-label="Interactive voxel construction yard"></canvas>
 <header><strong>KNOCKOUT YARD</strong><span>01 / DEMOLITION SITE</span></header>
-<aside><button id="walk" disabled>Walk</button> <button id="reset" disabled>Reset yard</button></aside>
+<aside><button id="view" hidden aria-label="First person">View</button> <button id="walk" disabled>Walk</button>
+<button id="reset" disabled>Reset yard</button> <button id="menu">Menu</button></aside>
+<div id="tools" hidden aria-label="Demolition tools">
+  <button id="previous-tool" aria-label="Previous tool">‹</button>
+  <output id="tool-name"></output>
+  <button id="next-tool" aria-label="Next tool">›</button>
+</div>
+<dialog id="loadout">
+  <form method="dialog"><button aria-label="Close menu">×</button></form>
+  <h2>Yard loadout</h2>
+  <p>Pick a demolition tool. Q/E cycles the loadout.</p>
+  <div class="loadout-tools">
+    <button data-tool="0"><small>1 · MELEE</small>Sledge</button>
+    <button data-tool="1"><small>2 · FIREARMS</small>Rifle</button>
+    <button data-tool="2"><small>3 · EXPLOSIVES</small>RPG</button>
+  </div>
+</dialog>
 <div id="reticle" hidden aria-hidden="true">+</div>
 <div id="move" hidden aria-label="Movement controls">
   <button data-key="KeyW" aria-label="Forward">▲</button>

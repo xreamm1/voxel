@@ -8,9 +8,11 @@ network run `npm run dev -- --host 0.0.0.0` and open port 5173 on the host's LAN
 Use `npm test` for deterministic engine/protocol tests and `npm run build` followed
 by `npm run preview` for the production build.
 
-Choose **Walk** for first-person movement. Use WASD, the arrow keys, or the
-on-screen directional pad. Drag the canvas to look around and tap to blast
-at the reticle. Choose **Orbit** to return to the overview.
+Choose **Walk** for an over-the-shoulder camera. Use WASD, the arrow keys, or
+the on-screen directional pad. Drag to look around and tap to use the selected
+tool. **View** or V switches first and third person. **Orbit** restores the
+overview. Open **Menu** or use Q/E or 1–3 to select the short-range Sledge,
+precision Rifle, or RPG with a visible rocket flight and a wide blast.
 To generate another copy, place `bootstrap.sh` in an empty directory and
 run `bash bootstrap.sh` there.
 
@@ -27,10 +29,11 @@ run `bash bootstrap.sh` there.
   removes the island normally and increments the omission counter.
 - One quad costs 40 bytes. Mesh capacity is 3,440,680 bytes each on CPU and GPU.
   Worker voxel/BFS arrays use 458,752 bytes, plus small workspaces and two
-  491,520-byte transferable packets. The maximum is 12 draws (2 static, 8
-  island sections, 1 instanced chip mesh, 1 ground). Framebuffers, driver copies, JS objects, and library
+  491,520-byte transferable packets. The maximum is 13 draws (2 static, 8
+  island sections, 1 instanced chip mesh, 1 avatar/rocket mesh, 1 ground).
+  Framebuffers, driver copies, JS objects, and library
   allocations are outside the tracked buffer estimate.
-- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius}`,
+- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius,reach,rocket}`,
   `activate{epoch,id}`, `tick{epoch,dx,dz}`, and `pause{epoch}`. Four input credits
   include the executing command. New taps are dropped when all credits are used.
 - Worker sends `mesh{epoch,id,slot,target,quads,buffer}` followed by
@@ -40,6 +43,8 @@ run `bash bootstrap.sh` there.
   sends `recycle{slot,buffer}` with transfer after upload or stale rejection.
   The receiver owns the packet after each transfer. Exhausted packet credits
   park the producer. Reset invalidates old revisions, including queued work.
+  The RPG's `launch` message carries the authoritative target and flight time.
+  Its impact holds its FIFO position while the worker continues handling ticks.
 - Draw ranges switch together at the frame boundary. The worker begins falling
   on receipt of `activate` after rendering that frame. A one-in-flight tick
   returns `pose{epoch,id,0,1,2,3,...stats}`, with null slots for inactive bodies.

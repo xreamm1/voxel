@@ -55,11 +55,19 @@ export function* seedWorld(world) {
   yield* box(22, 41, 8, 8, 12, 19, 3);
   yield* box(23, 40, 14, 14, 12, 19, 1);
   yield* box(25, 38, 15, 15, 14, 17, 4);
+  yield* box(29, 34, 0, 0, 20, 30, 6);
+  for (const x of [20,38]) {
+    yield* box(x, x+5, 0, 0, 24, 29, 7);
+    const tree = x+2;
+    yield* box(tree, tree, 1, 4, 26, 26, 5);
+    yield* box(tree-1, tree+1, 4, 6, 25, 27, 7);
+    yield* box(tree-2, tree+2, 5, 5, 26, 26, 7);
+  }
 }
 
 // Slab entry followed by half-open cells. At a tie advance every tied axis.
-export function raycast(world, origin, direction, hit, slab) {
-  let first = 0, last = Infinity;
+export function raycast(world, origin, direction, hit, slab, reach = Infinity) {
+  let first = 0, last = reach;
   if (!origin || !direction || origin.length !== 3 || direction.length !== 3) return false;
   const length = Math.hypot(direction[0], direction[1], direction[2]);
   if (!Number.isFinite(length) || length === 0) return false;

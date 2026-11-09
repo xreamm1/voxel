@@ -50,7 +50,23 @@ cat > index.html <<'HTML'
 <link rel="stylesheet" href="./style.css">
 <canvas aria-label="Interactive voxel construction yard"></canvas>
 <header><strong>KNOCKOUT YARD</strong><span>01 / DEMOLITION SITE</span></header>
-<aside><button id="walk" disabled>Walk</button> <button id="reset" disabled>Reset yard</button></aside>
+<aside><button id="view" hidden aria-label="First person">View</button> <button id="walk" disabled>Walk</button>
+<button id="reset" disabled>Reset yard</button> <button id="menu">Menu</button></aside>
+<div id="tools" hidden aria-label="Demolition tools">
+  <button id="previous-tool" aria-label="Previous tool">‹</button>
+  <output id="tool-name"></output>
+  <button id="next-tool" aria-label="Next tool">›</button>
+</div>
+<dialog id="loadout">
+  <form method="dialog"><button aria-label="Close menu">×</button></form>
+  <h2>Yard loadout</h2>
+  <p>Pick a demolition tool. Q/E cycles the loadout.</p>
+  <div class="loadout-tools">
+    <button data-tool="0"><small>1 · MELEE</small>Sledge</button>
+    <button data-tool="1"><small>2 · FIREARMS</small>Rifle</button>
+    <button data-tool="2"><small>3 · EXPLOSIVES</small>RPG</button>
+  </div>
+</dialog>
 <div id="reticle" hidden aria-hidden="true">+</div>
 <div id="move" hidden aria-label="Movement controls">
   <button data-key="KeyW" aria-label="Forward">▲</button>
@@ -86,6 +102,21 @@ pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wra
 #move button { width: 44px; height: 44px; padding: 0; touch-action: none }
 #move button:first-child { grid-column: 2; grid-row: 1 }
 #move button:nth-child(n+2) { grid-row: 2 }
+#tools:not([hidden]) { position: fixed; right: 16px; bottom: 94px; display: flex; align-items: center;
+  gap: 6px; padding: 4px; border-radius: 10px; background: #fffd }
+#tool-name { min-width: 76px; text-align: center; font-weight: 750 }
+#loadout { color: #edf5f9; background: #152631; border: 1px solid #55717e;
+  border-radius: 14px; max-width: calc(100vw - 24px); padding: 20px }
+#loadout::backdrop { background: #12222db8 }
+#loadout form { float: right }
+.loadout-tools { display: grid; gap: 6px }
+.loadout-tools button { text-align: left }
+.loadout-tools small { display: block; font-size: 10px; letter-spacing: .09em }
+@media (max-width: 500px) {
+  header span, header strong { display: none }
+  aside { left: 12px; right: auto }
+  aside button { padding: 8px 9px }
+}
 CSS
 cat > engine.js <<'ENGINE'
 export const SIZE = 32, WIDTH = 64, VOLUME = WIDTH * SIZE * SIZE;
@@ -145,11 +176,19 @@ export function* seedWorld(world) {
   yield* box(22, 41, 8, 8, 12, 19, 3);
   yield* box(23, 40, 14, 14, 12, 19, 1);
   yield* box(25, 38, 15, 15, 14, 17, 4);
+  yield* box(29, 34, 0, 0, 20, 30, 6);
+  for (const x of [20,38]) {
+    yield* box(x, x+5, 0, 0, 24, 29, 7);
+    const tree = x+2;
+    yield* box(tree, tree, 1, 4, 26, 26, 5);
+    yield* box(tree-1, tree+1, 4, 6, 25, 27, 7);
+    yield* box(tree-2, tree+2, 5, 5, 26, 26, 7);
+  }
 }
 
 // Slab entry followed by half-open cells. At a tie advance every tied axis.
-export function raycast(world, origin, direction, hit, slab) {
-  let first = 0, last = Infinity;
+export function raycast(world, origin, direction, hit, slab, reach = Infinity) {
+  let first = 0, last = reach;
   if (!origin || !direction || origin.length !== 3 || direction.length !== 3) return false;
   const length = Math.hypot(direction[0], direction[1], direction[2]);
   if (!Number.isFinite(length) || length === 0) return false;
@@ -620,7 +659,7 @@ const walker = new Walker(), chips = new Chips();
 const dirty = new Uint8Array(CHUNKS), hit = new Int32Array(3), slab = new Float64Array(3);
 const queue = [];
 const WAIT = Symbol('waiting for transfer credit');
-let epoch = 0, id = 0, applied = -1, job, awaiting = false, scheduled = false, mask = 0;
+let epoch = 0, id = 0, applied = -1, job, awaiting = false, timer = null, mask = 0;
 let droppedBodies = 0, lastTick = 0, carry = 0, sliceMax = 0, sliceCount = 0, sliceTotal = 0;
 let queueHigh = 0;
 
@@ -652,7 +691,14 @@ function* transaction(command) {
   if (id === 0) {
     yield* seedWorld(world);
     dirty.fill(1);
-  } else if (raycast(world,command.origin,command.direction,hit,slab)) {
+  } else if (raycast(world,command.origin,command.direction,hit,slab,
+    Number.isFinite(command.reach) ? Math.max(0,Math.min(100,command.reach)) : Infinity)) {
+    if (command.rocket) {
+      const x = hit[0]+.5, y = hit[1]+.5, z = hit[2]+.5;
+      const ms = Math.max(70,Math.hypot(x-command.origin[0],y-command.origin[1],z-command.origin[2])*9);
+      postMessage({type:'launch',epoch,id,origin:command.origin,x,y,z,ms});
+      yield ms;
+    }
     const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
     if (removed) yield* support.detach(world,dirty,present);
   }
@@ -662,13 +708,12 @@ function* transaction(command) {
 }
 
 function schedule() {
-  if (scheduled || awaiting || (!job && !queue.length)) return;
-  scheduled = true;
-  setTimeout(pump,0);
+  if (timer !== null || awaiting || (!job && !queue.length)) return;
+  timer = setTimeout(pump,0);
 }
 
 function pump() {
-  scheduled = false;
+  timer = null;
   if (awaiting) return;
   if (!job) {
     if (!queue.length) return;
@@ -682,6 +727,11 @@ function pump() {
       if (next.done) {
         job = null;
         awaiting = true;
+        break;
+      }
+      if (typeof next.value === 'number') {
+        timer = setTimeout(pump,next.value);
+        waiting = true;
         break;
       }
       if (next.value === WAIT) { waiting = true; break; }
@@ -719,6 +769,8 @@ self.onmessage = ({data: m}) => {
     return;
   }
   if (m.type === 'reset' && m.epoch > epoch) {
+    clearTimeout(timer);
+    timer = null;
     epoch = m.epoch;
     applied = -1;
     queue.length = 0;
@@ -881,19 +933,68 @@ import {EYE,SPAWN_X,SPAWN_Z} from './motion.js';
 export function walking(canvas,camera,controls,home) {
   const button = document.querySelector('#walk'), move = document.querySelector('#move');
   const reticle = document.querySelector('#reticle'), help = document.querySelector('#help');
+  const view = document.querySelector('#view'), tools = document.querySelector('#tools');
+  const name = document.querySelector('#tool-name'), menu = document.querySelector('#loadout');
+  const loadout = [
+    {name:'Sledge',radius:2.5,reach:4,cooldown:430},
+    {name:'Rifle',radius:1,reach:60,cooldown:145},
+    {name:'RPG',radius:5.5,reach:64,cooldown:650}
+  ];
   const keys = new Set(), touches = new Map();
   const movement = new Float64Array(2);
-  let yaw, pitch, x, z, feet;
+  let yaw, pitch, x, z, feet, phase = 0, stride = 0, swing = -Infinity;
+  let selected = 2, third = true;
+  function equip(index) {
+    selected = (index+loadout.length)%loadout.length;
+    name.textContent = loadout[selected].name;
+  }
+  equip(selected);
+  document.querySelector('#previous-tool').onclick = () => equip(selected-1);
+  document.querySelector('#next-tool').onclick = () => equip(selected+1);
+  document.querySelector('#menu').onclick = () => {
+    keys.clear();
+    touches.clear();
+    menu.showModal();
+  };
+  for (const choice of menu.querySelectorAll('[data-tool]')) {
+    choice.onclick = () => { equip(Number(choice.dataset.tool)); menu.close(); };
+  }
+  function toggleView() {
+    third = !third;
+    view.setAttribute('aria-label',third ? 'First person' : 'Third person');
+    state.aim();
+  }
+  view.onclick = toggleView;
   const state = {
     active:false,
+    get thirdPerson() { return state.active && third; },
+    get x() { return x; }, get z() { return z; }, get feet() { return feet; },
+    get yaw() { return yaw; }, get gait() { return Math.sin(phase)*stride; },
+    get tool() { return selected; },
+    attack(ray,now) {
+      const tool = loadout[selected];
+      if (now-swing < tool.cooldown) return;
+      swing = now;
+      ray.origin.set(x,feet+EYE,z);
+      ray.direction.set(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
+      return tool;
+    },
+    action(now) { return Math.max(0,1-(now-swing)/loadout[selected].cooldown); },
     reset() {
       yaw = pitch = feet = 0;
+      phase = stride = 0;
+      swing = -Infinity;
       x = SPAWN_X;
       z = SPAWN_Z;
       keys.clear();
       touches.clear();
     },
-    pose(m) { x = m.x; z = m.z; feet = m.feet; },
+    pose(m) {
+      const distance = Math.hypot(m.x-x,m.z-z);
+      if (distance > .001) phase = (phase + distance*7) % (2*Math.PI);
+      stride = stride*.75 + (distance > .001 ? .25 : 0);
+      x = m.x; z = m.z; feet = m.feet;
+    },
     look(dx,dY) {
       yaw -= dx * .004;
       pitch = Math.min(1.52,Math.max(-1.52,pitch-dY*.004));
@@ -901,6 +1002,13 @@ export function walking(canvas,camera,controls,home) {
     aim() {
       camera.position.set(x,feet+EYE,z);
       camera.rotation.set(pitch,yaw,0,'YXZ');
+      if (third) {
+        camera.translateZ(3.8);
+        camera.position.x += Math.cos(yaw)*.65;
+        camera.position.z -= Math.sin(yaw)*.65;
+        camera.lookAt(x-Math.sin(yaw)*Math.cos(pitch)*12,feet+EYE+Math.sin(pitch)*12,
+          z-Math.cos(yaw)*Math.cos(pitch)*12);
+      }
       camera.updateMatrixWorld();
     },
     movement() {
@@ -923,10 +1031,11 @@ export function walking(canvas,camera,controls,home) {
     state.active = !state.active;
     controls.enabled = !state.active;
     reticle.hidden = move.hidden = !state.active;
+    view.hidden = tools.hidden = !state.active;
     button.setAttribute('aria-pressed',String(state.active));
     button.textContent = state.active ? 'Orbit' : 'Walk';
     help.textContent = state.active ?
-      'WASD or arrows below to walk · Drag to aim · Tap to blast' :
+      'WASD to walk · Drag to aim · Tap to use tool · Q/E to switch' :
       'Tap to blast · Drag to orbit · Pinch or scroll to zoom';
     keys.clear();
     touches.clear();
@@ -935,8 +1044,15 @@ export function walking(canvas,camera,controls,home) {
   const bindings = {KeyW:'KeyW',KeyA:'KeyA',KeyS:'KeyS',KeyD:'KeyD',
     ArrowUp:'KeyW',ArrowLeft:'KeyA',ArrowDown:'KeyS',ArrowRight:'KeyD'};
   addEventListener('keydown',event => {
+    if (!state.active || menu.open) return;
+    if (!event.repeat) {
+      if (event.code === 'KeyQ') equip(selected-1);
+      if (event.code === 'KeyE') equip(selected+1);
+      if (event.code === 'KeyV') toggleView();
+      if (/^Digit[123]$/.test(event.code)) equip(Number(event.code.at(-1))-1);
+    }
     const key = bindings[event.code];
-    if (!state.active || !key) return;
+    if (!key) return;
     event.preventDefault();
     keys.add(key);
   });
@@ -1015,7 +1131,7 @@ function start() {
   const material = new T.RawShaderMaterial({
     glslVersion:T.GLSL3,
     uniforms:{palette:{value:['#293940','#ffc736','#17b7b3','#ff6b47',
-      '#f2f5ee','#607584','#9bb0ae','#87b7f2'].map(color => new T.Color(color))}},
+      '#f2f5ee','#607584','#9bb0ae','#70aa5d'].map(color => new T.Color(color))}},
     vertexShader:`
       precision highp float;
       precision highp int;
@@ -1122,6 +1238,62 @@ function start() {
   chips.count = 1;
   scene.add(chips);
 
+  const actorGeometry = chipGeometry.clone();
+  const actorColors = actorGeometry.getAttribute('chipMaterial');
+  const actor = new T.InstancedMesh(actorGeometry,chipMaterial,9);
+  actor.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  actor.frustumCulled = false;
+  actor.count = 1;
+  actor.setMatrixAt(0,chipTransform.matrix);
+  actor.onAfterRender = () => { if (actor.count) draws[2]++; };
+  scene.add(actor);
+  const root = new T.Object3D(), part = new T.Object3D(), matrix = new T.Matrix4();
+  const rocketFrom = new T.Vector3(), rocketTo = new T.Vector3();
+  let rocket = null, actorCount = 0;
+  function box(x,y,z,sx,sy,sz,color,angle = 0) {
+    part.position.set(x,y,z);
+    part.scale.set(sx,sy,sz);
+    part.rotation.x = angle;
+    part.updateMatrix();
+    matrix.multiplyMatrices(root.matrix,part.matrix);
+    actor.setMatrixAt(actorCount,matrix);
+    actorColors.array[actorCount++] = color;
+  }
+  function showActor(now) {
+    actorCount = 0;
+    if (walk.thirdPerson) {
+      const gait = walk.gait, action = walk.action(now);
+      const swing = walk.tool === 0 ? Math.sin(action*Math.PI)*1.8 : action*.45;
+      root.position.set(walk.x,walk.feet+Math.abs(gait)*.055,walk.z);
+      root.rotation.y = walk.yaw;
+      root.updateMatrix();
+      box(0,1.77,0,.45,.44,.43,4);
+      box(0,1.99,0,.56,.12,.53,1);
+      box(0,1.26,0,.67,.57,.37,2);
+      box(-.45,1.24,gait*.11,.21,.51,.24,4,gait*.65);
+      box(.45,1.24,-gait*.11-swing*.13,.21,.51,.24,4,-gait*.65-swing);
+      box(-.17,.46,-gait*.19,.28,.85,.31,5,-gait*.63);
+      box(.17,.46,gait*.19,.28,.85,.31,5,gait*.63);
+      if (walk.tool === 0) box(.51,1.39+swing*.36,-.28,.22,.53,.34,1,-swing);
+      else box(.51,1.22,-.39+action*.12,.20,.23,walk.tool === 1 ? .63 : .82,3);
+    }
+    if (rocket) {
+      const t = Math.min(1,(now-rocket.start)/rocket.ms);
+      root.position.lerpVectors(rocketFrom,rocketTo,Math.max(0,t));
+      root.rotation.set(0,0,0);
+      root.updateMatrix();
+      box(0,0,0,.19,.19,.19,3);
+      if (t >= 1) rocket = null;
+    }
+    actor.count = actorCount;
+    actor.visible = Boolean(actorCount);
+    if (actorCount) {
+      actor.instanceMatrix.addUpdateRange(0,actorCount*16);
+      actorColors.addUpdateRange(0,actorCount);
+      actor.instanceMatrix.needsUpdate = actorColors.needsUpdate = true;
+    }
+  }
+
   function showChips() {
     let count = 0;
     for (let i = 0; i < chipData.length; i += CHIP_STRIDE) {
@@ -1156,6 +1328,7 @@ function start() {
   renderer.compile(scene,camera);
   renderer.render(scene,camera);
   chips.visible = false;
+  actor.visible = false;
   if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL 2 failed to initialize the voxel renderer.');
   for (const pair of terrain) for (const entry of pair) entry.mesh.visible = false;
   for (const entry of debris) entry.mesh.visible = false;
@@ -1172,6 +1345,8 @@ function start() {
     workerAndTransferBytes:7*VOLUME + SLOTS*PACKET_BYTES + 4096 + CHIP_COUNT*61,
     chipCpuGpuBytes:2*(CHIP_COUNT*68 + packed.byteLength + chipGeometry.index.array.byteLength) +
       chipData.byteLength,
+    actorCpuGpuBytes:2*(9*64 + actorColors.array.byteLength + packed.byteLength +
+      chipGeometry.index.array.byteLength),
     telemetryHistogramBytes:params.has('bench') ? 5*1025*4 : 0
   };
   const bench = params.has('bench') ? benchmark(params,metrics,shoot,reset,tracked) : null;
@@ -1210,14 +1385,19 @@ function start() {
             mixStart[slot] = now;
           }
         }
+      } else if (m.type === 'launch') {
+        if (!ledger.current(m)) return;
+        rocket = {start:performance.now(),ms:m.ms};
+        rocketFrom.fromArray(m.origin);
+        rocketTo.set(m.x,m.y,m.z);
       } else stage.receive(m,ledger,recycle);
     } catch (error) { fail(error.message); console.error(error); }
   };
 
-  function shoot(origin,direction,radius) {
+  function shoot(origin,direction,radius,reach,rocket) {
     const id = ready && !failed ? ledger.accept(performance.now()) : 0;
     bench?.input(Boolean(id));
-    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius});
+    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius,reach,rocket});
   }
   function reset() {
     if (failed) return;
@@ -1225,6 +1405,7 @@ function start() {
     button.disabled = true;
     walk.ready(false);
     walk.reset();
+    rocket = null;
     status.textContent = 'Preparing a fresh yard…';
     ledger.reset();
     stage.clear(recycle);
@@ -1274,7 +1455,11 @@ function start() {
     tap = false;
     const rect = canvas.getBoundingClientRect();
     ndc.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
-    if (walk.active) { ndc.set(0,0); walk.aim(); }
+    if (walk.active) {
+      const tool = walk.attack(ray.ray,performance.now());
+      if (tool) shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),tool.radius,tool.reach,walk.tool === 2);
+      return;
+    }
     ray.setFromCamera(ndc,camera);
     shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),4.75);
   });
@@ -1370,6 +1555,7 @@ function start() {
         }
       }
       if (walk.active) walk.aim(); else controls.update();
+      showActor(now);
       const packet = stage.packets.shift();
       if (packet) stageMesh(packet);
       const commit = stage.ready();
@@ -1482,6 +1668,8 @@ test('DDA slab entry, boundary direction, parallel exclusion and corner tie', ()
   assert.deepEqual([...hit],[1,1,0]);
   assert.equal(raycast(world,[-1,32,0],[1,0,0],hit,slab),false);
   assert.equal(raycast(world,[0,0,0],[0,0,0],hit,slab),false);
+  assert.equal(raycast(world,[-1,.5,.5],[1,0,0],hit,slab,1.5),false);
+  assert.equal(raycast(world,[-1,.5,.5],[1,0,0],hit,slab,2.5),true);
 });
 
 test('cross-chunk support, separated islands, conservation, and ground impact', () => {
@@ -1645,11 +1833,19 @@ test('real worker drains queued blasts in order and restores identical seed afte
   const worker = new Worker(new URL('data:text/javascript,'+encodeURIComponent(adapter)));
   t.after(() => worker.terminate());
   let seedMask = 0, blastMask = 0, epoch = 1;
+  let launched = false;
   const order = [], seed = [], held = [];
   await new Promise((resolve,reject) => {
     worker.on('error',reject);
     worker.on('message',m => {
       try {
+        if (m.type === 'launch') {
+          assert.equal(m.id,1);
+          assert.equal(m.epoch,1);
+          assert.ok(m.ms >= 70);
+          launched = true;
+          return;
+        }
         if (m.type === 'mesh') {
           const {buffer,slot} = m;
           if (m.id === 0) {
@@ -1682,10 +1878,11 @@ test('real worker drains queued blasts in order and restores identical seed afte
         if (epoch === 2) { assert.equal(seedMask,3); resolve(); return; }
         if (m.id === 0) {
           for (let id = 1; id <= QUEUE; id++) {
-            worker.postMessage({type:'blast',epoch,id,origin:[31.5,3.5,34],direction:[0,0,-1],radius:5.5});
+            worker.postMessage({type:'blast',epoch,id,origin:[31.5,3.5,34],direction:[0,0,-1],
+              radius:5.5,reach:64,rocket:id === 1});
           }
         } else {
-          if (m.id === 1) assert.equal(m.mask & 15,15);
+          if (m.id === 1) { assert.ok(launched); assert.equal(m.mask & 15,15); }
           order.push(m.id);
           if (m.id === QUEUE) {
             assert.deepEqual(order,[1,2,3,4]);
@@ -1710,9 +1907,11 @@ network run `npm run dev -- --host 0.0.0.0` and open port 5173 on the host's LAN
 Use `npm test` for deterministic engine/protocol tests and `npm run build` followed
 by `npm run preview` for the production build.
 
-Choose **Walk** for first-person movement. Use WASD, the arrow keys, or the
-on-screen directional pad. Drag the canvas to look around and tap to blast
-at the reticle. Choose **Orbit** to return to the overview.
+Choose **Walk** for an over-the-shoulder camera. Use WASD, the arrow keys, or
+the on-screen directional pad. Drag to look around and tap to use the selected
+tool. **View** or V switches first and third person. **Orbit** restores the
+overview. Open **Menu** or use Q/E or 1–3 to select the short-range Sledge,
+precision Rifle, or RPG with a visible rocket flight and a wide blast.
 To generate another copy, place `bootstrap.sh` in an empty directory and
 run `bash bootstrap.sh` there.
 
@@ -1729,10 +1928,11 @@ run `bash bootstrap.sh` there.
   removes the island normally and increments the omission counter.
 - One quad costs 40 bytes. Mesh capacity is 3,440,680 bytes each on CPU and GPU.
   Worker voxel/BFS arrays use 458,752 bytes, plus small workspaces and two
-  491,520-byte transferable packets. The maximum is 12 draws (2 static, 8
-  island sections, 1 instanced chip mesh, 1 ground). Framebuffers, driver copies, JS objects, and library
+  491,520-byte transferable packets. The maximum is 13 draws (2 static, 8
+  island sections, 1 instanced chip mesh, 1 avatar/rocket mesh, 1 ground).
+  Framebuffers, driver copies, JS objects, and library
   allocations are outside the tracked buffer estimate.
-- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius}`,
+- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius,reach,rocket}`,
   `activate{epoch,id}`, `tick{epoch,dx,dz}`, and `pause{epoch}`. Four input credits
   include the executing command. New taps are dropped when all credits are used.
 - Worker sends `mesh{epoch,id,slot,target,quads,buffer}` followed by
@@ -1742,6 +1942,8 @@ run `bash bootstrap.sh` there.
   sends `recycle{slot,buffer}` with transfer after upload or stale rejection.
   The receiver owns the packet after each transfer. Exhausted packet credits
   park the producer. Reset invalidates old revisions, including queued work.
+  The RPG's `launch` message carries the authoritative target and flight time.
+  Its impact holds its FIFO position while the worker continues handling ticks.
 - Draw ranges switch together at the frame boundary. The worker begins falling
   on receipt of `activate` after rendering that frame. A one-in-flight tick
   returns `pose{epoch,id,0,1,2,3,...stats}`, with null slots for inactive bodies.

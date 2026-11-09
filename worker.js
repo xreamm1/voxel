@@ -11,7 +11,7 @@ const walker = new Walker(), chips = new Chips();
 const dirty = new Uint8Array(CHUNKS), hit = new Int32Array(3), slab = new Float64Array(3);
 const queue = [];
 const WAIT = Symbol('waiting for transfer credit');
-let epoch = 0, id = 0, applied = -1, job, awaiting = false, scheduled = false, mask = 0;
+let epoch = 0, id = 0, applied = -1, job, awaiting = false, timer = null, mask = 0;
 let droppedBodies = 0, lastTick = 0, carry = 0, sliceMax = 0, sliceCount = 0, sliceTotal = 0;
 let queueHigh = 0;
 
@@ -43,7 +43,14 @@ function* transaction(command) {
   if (id === 0) {
     yield* seedWorld(world);
     dirty.fill(1);
-  } else if (raycast(world,command.origin,command.direction,hit,slab)) {
+  } else if (raycast(world,command.origin,command.direction,hit,slab,
+    Number.isFinite(command.reach) ? Math.max(0,Math.min(100,command.reach)) : Infinity)) {
+    if (command.rocket) {
+      const x = hit[0]+.5, y = hit[1]+.5, z = hit[2]+.5;
+      const ms = Math.max(70,Math.hypot(x-command.origin[0],y-command.origin[1],z-command.origin[2])*9);
+      postMessage({type:'launch',epoch,id,origin:command.origin,x,y,z,ms});
+      yield ms;
+    }
     const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
     if (removed) yield* support.detach(world,dirty,present);
   }
@@ -53,13 +60,12 @@ function* transaction(command) {
 }
 
 function schedule() {
-  if (scheduled || awaiting || (!job && !queue.length)) return;
-  scheduled = true;
-  setTimeout(pump,0);
+  if (timer !== null || awaiting || (!job && !queue.length)) return;
+  timer = setTimeout(pump,0);
 }
 
 function pump() {
-  scheduled = false;
+  timer = null;
   if (awaiting) return;
   if (!job) {
     if (!queue.length) return;
@@ -73,6 +79,11 @@ function pump() {
       if (next.done) {
         job = null;
         awaiting = true;
+        break;
+      }
+      if (typeof next.value === 'number') {
+        timer = setTimeout(pump,next.value);
+        waiting = true;
         break;
       }
       if (next.value === WAIT) { waiting = true; break; }
@@ -110,6 +121,8 @@ self.onmessage = ({data: m}) => {
     return;
   }
   if (m.type === 'reset' && m.epoch > epoch) {
+    clearTimeout(timer);
+    timer = null;
     epoch = m.epoch;
     applied = -1;
     queue.length = 0;
