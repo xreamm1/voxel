@@ -187,7 +187,9 @@ function start() {
     actorCount = 0;
     if (walk.thirdPerson) {
       const gait = walk.gait, action = walk.action(now);
-      const swing = walk.tool === 0 ? Math.sin(action*Math.PI)*1.8 : action*.45;
+      const equip = walk.equipping(now);
+      const swing = walk.tool === 0 ? Math.sin(action*Math.PI)*1.8 + Math.sin(equip*Math.PI)*.8 :
+        action*action*.45;
       root.position.set(walk.x,walk.feet+Math.abs(gait)*.055,walk.z);
       root.rotation.y = walk.yaw;
       root.updateMatrix();

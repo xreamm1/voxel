@@ -6,16 +6,21 @@ export function walking(canvas,camera,controls,home) {
   const view = document.querySelector('#view'), tools = document.querySelector('#tools');
   const name = document.querySelector('#tool-name'), menu = document.querySelector('#loadout');
   const loadout = [
-    {name:'Sledge',radius:2.5,reach:4,cooldown:430},
-    {name:'Rifle',radius:1,reach:60,cooldown:145},
-    {name:'RPG',radius:5.5,reach:64,cooldown:650}
+    {name:'Sledge',radius:2.5,reach:4,cooldown:1617,animation:1617,equip:1000},
+    {name:'Rifle',radius:1,reach:60,cooldown:145,animation:145,equip:0},
+    {name:'RPG',radius:5.5,reach:64,cooldown:650,animation:367,equip:0}
   ];
   const keys = new Set(), touches = new Map();
   const movement = new Float64Array(2);
   let yaw, pitch, x, z, feet, phase = 0, stride = 0, swing = -Infinity;
-  let selected = 2, third = true;
+  let selected = 2, third = true, equippedAt = -Infinity;
   function equip(index) {
-    selected = (index+loadout.length)%loadout.length;
+    const next = (index+loadout.length)%loadout.length;
+    if (next !== selected) {
+      selected = next;
+      equippedAt = performance.now();
+      swing = -Infinity;
+    }
     name.textContent = loadout[selected].name;
   }
   equip(selected);
@@ -43,17 +48,22 @@ export function walking(canvas,camera,controls,home) {
     get tool() { return selected; },
     attack(ray,now) {
       const tool = loadout[selected];
-      if (now-swing < tool.cooldown) return;
+      if (now-swing < tool.cooldown || now-equippedAt < tool.equip) return;
       swing = now;
       ray.origin.set(x,feet+EYE,z);
       ray.direction.set(-Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),-Math.cos(yaw)*Math.cos(pitch));
       return tool;
     },
-    action(now) { return Math.max(0,1-(now-swing)/loadout[selected].cooldown); },
+    action(now) { return Math.max(0,1-(now-swing)/loadout[selected].animation); },
+    equipping(now) {
+      const duration = loadout[selected].equip;
+      return duration ? Math.max(0,1-(now-equippedAt)/duration) : 0;
+    },
     reset() {
       yaw = pitch = feet = 0;
       phase = stride = 0;
       swing = -Infinity;
+      equippedAt = -Infinity;
       x = SPAWN_X;
       z = SPAWN_Z;
       keys.clear();
@@ -61,7 +71,8 @@ export function walking(canvas,camera,controls,home) {
     },
     pose(m) {
       const distance = Math.hypot(m.x-x,m.z-z);
-      if (distance > .001) phase = (phase + distance*7) % (2*Math.PI);
+      // At full speed (5 m/s), one reference locomotion cycle takes 0.625 s.
+      if (distance > .001) phase = (phase + distance*2*Math.PI/(5*.625)) % (2*Math.PI);
       stride = stride*.75 + (distance > .001 ? .25 : 0);
       x = m.x; z = m.z; feet = m.feet;
     },
@@ -73,9 +84,8 @@ export function walking(canvas,camera,controls,home) {
       camera.position.set(x,feet+EYE,z);
       camera.rotation.set(pitch,yaw,0,'YXZ');
       if (third) {
-        camera.translateZ(3.8);
-        camera.position.x += Math.cos(yaw)*.65;
-        camera.position.z -= Math.sin(yaw)*.65;
+        camera.translateZ(2.53);
+        camera.position.y += .55;
         camera.lookAt(x-Math.sin(yaw)*Math.cos(pitch)*12,feet+EYE+Math.sin(pitch)*12,
           z-Math.cos(yaw)*Math.cos(pitch)*12);
       }
@@ -100,6 +110,8 @@ export function walking(canvas,camera,controls,home) {
   button.addEventListener('click',() => {
     state.active = !state.active;
     controls.enabled = !state.active;
+    camera.fov = state.active ? 70 : 44;
+    camera.updateProjectionMatrix();
     reticle.hidden = move.hidden = !state.active;
     view.hidden = tools.hidden = !state.active;
     button.setAttribute('aria-pressed',String(state.active));
