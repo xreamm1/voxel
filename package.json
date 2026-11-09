@@ -1,0 +1,14 @@
+{
+  "name": "voxel-destruction",
+  "private": true,
+  "type": "module",
+  "engines": { "node": "22.x || 24.x" },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test"
+  },
+  "dependencies": { "three": "0.179.1" },
+  "devDependencies": { "vite": "6.4.5" }
+}

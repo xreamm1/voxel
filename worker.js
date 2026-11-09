@@ -1,0 +1,136 @@
+import {
+  World, Connectivity, Mesher, Bodies, CHUNKS, BODIES, QUEUE,
+  VERTEX_WORDS, STATIC_CAP, BODY_CAP, STEP, seedWorld, raycast, blast
+} from './engine.js';
+import {TransferPool} from './protocol.js';
+
+const world = new World(), support = new Connectivity(), mesher = new Mesher();
+const bodies = new Bodies(), pool = new TransferPool();
+const dirty = new Uint8Array(CHUNKS), hit = new Int32Array(3), slab = new Float64Array(3);
+const queue = [];
+const WAIT = Symbol('waiting for transfer credit');
+let epoch = 0, id = 0, applied = -1, job, awaiting = false, scheduled = false, mask = 0;
+let droppedBodies = 0, lastTick = 0, carry = 0, sliceMax = 0, sliceCount = 0, sliceTotal = 0;
+let queueHigh = 0;
+
+function* mesh(source, section, target, cap) {
+  let slot;
+  while ((slot = pool.take()) < 0) yield WAIT;
+  const buffer = pool.buffers[slot];
+  const vertices = new Uint32Array(buffer, 0, cap*4);
+  const indices = new Uint32Array(buffer, VERTEX_WORDS*4, cap*6);
+  const quads = yield* mesher.mesh(source,section,vertices,indices);
+  mask |= 1 << target;
+  pool.lend(slot);
+  postMessage({type:'mesh',epoch,id,slot,target,quads,buffer},[buffer]);
+}
+
+function* present(island) {
+  const slot = bodies.reserve(island);
+  if (slot < 0) { droppedBodies++; return; }
+  const first = island.bounds[0] >> 5, last = island.bounds[3] >> 5;
+  for (let section = first; section <= last; section++) {
+    yield* mesh(island.island,section,CHUNKS + slot*CHUNKS + section,BODY_CAP);
+  }
+}
+
+function* transaction(command) {
+  id = command.id;
+  dirty.fill(0);
+  mask = 0;
+  if (id === 0) {
+    yield* seedWorld(world);
+    dirty.fill(1);
+  } else if (raycast(world,command.origin,command.direction,hit,slab)) {
+    const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty);
+    if (removed) yield* support.detach(world,dirty,present);
+  }
+  for (let section = 0; section < CHUNKS; section++) {
+    if (dirty[section]) yield* mesh(world,section,section,STATIC_CAP);
+  }
+}
+
+function schedule() {
+  if (scheduled || awaiting || (!job && !queue.length)) return;
+  scheduled = true;
+  setTimeout(pump,0);
+}
+
+function pump() {
+  scheduled = false;
+  if (awaiting) return;
+  if (!job) {
+    if (!queue.length) return;
+    job = transaction(queue.shift());
+  }
+  const start = performance.now();
+  let waiting = false;
+  do {
+    for (let i = 0; i < 16; i++) {
+      const next = job.next();
+      if (next.done) {
+        job = null;
+        awaiting = true;
+        break;
+      }
+      if (next.value === WAIT) { waiting = true; break; }
+    }
+  } while (job && !waiting && performance.now() - start < 2);
+  const elapsed = performance.now() - start;
+  sliceCount++;
+  sliceTotal += elapsed;
+  sliceMax = Math.max(sliceMax,elapsed);
+  if (awaiting) postMessage({type:'end',epoch,id,mask});
+  else if (!waiting) schedule();
+}
+
+function tick() {
+  const now = performance.now();
+  if (lastTick) carry += Math.min((now-lastTick)/1000,STEP*4);
+  lastTick = now;
+  let steps = 0;
+  while (carry >= STEP && steps++ < 4) { bodies.step(); carry -= STEP; }
+  const pose = {type:'pose',epoch,id:applied,sliceCount,sliceTotal,sliceMax,queueHigh,droppedBodies};
+  for (let i = 0; i < BODIES; i++) pose[i] = bodies.state[i] === 2 ? bodies.y[i] : null;
+  postMessage(pose);
+}
+
+self.onmessage = ({data: m}) => {
+  if (m.type === 'recycle') {
+    pool.recycle(m.slot,m.buffer);
+    schedule();
+    return;
+  }
+  if (m.type === 'reset' && m.epoch > epoch) {
+    epoch = m.epoch;
+    applied = -1;
+    queue.length = 0;
+    queue.push({id:0});
+    job = null;
+    awaiting = false;
+    bodies.state.fill(0);
+    support.island.clear();
+    lastTick = carry = 0;
+    schedule();
+    return;
+  }
+  if (m.epoch !== epoch) return;
+  if (m.type === 'tick') tick();
+  if (m.type === 'pause') lastTick = carry = 0;
+  if (m.type === 'blast') {
+    if (queue.length + Number(Boolean(job || awaiting)) >= QUEUE) {
+      throw new Error('Input credit exceeded.');
+    }
+    queue.push(m);
+    queueHigh = Math.max(queueHigh,queue.length + Number(Boolean(job || awaiting)));
+    schedule();
+  }
+  if (m.type === 'activate' && awaiting && m.id === id) {
+    awaiting = false;
+    applied = id;
+    bodies.activate();
+    lastTick = performance.now();
+    carry = 0;
+    schedule();
+  }
+};

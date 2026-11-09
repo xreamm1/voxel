@@ -1,0 +1,14 @@
+:root { font: 15px system-ui,sans-serif; color: #142633; background: #b9e5fc }
+* { box-sizing: border-box }
+body { margin: 0; overflow: hidden }
+canvas { display: block; width: 100vw; height: 100dvh; touch-action: none }
+header, aside, footer, pre { position: fixed; margin: 0 }
+header, footer, pre { pointer-events: none }
+header { top: 16px; left: 16px; display: grid; gap: 3px }
+header strong { font-size: clamp(16px,4vw,27px); letter-spacing: .06em }
+header span { font-size: 10px; font-weight: 750; letter-spacing: .16em }
+aside { top: 16px; right: 16px }
+button, footer, pre { padding: 10px 12px; border-radius: 8px; background: #fffc; color: inherit }
+button { border: 1px solid #142633; font: inherit; font-weight: 700; cursor: pointer }
+footer { bottom: 16px; left: 16px; right: 16px; width: fit-content; max-width: calc(100% - 32px) }
+pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wrap; font-size: 11px }
