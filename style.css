@@ -12,3 +12,10 @@ button, footer, pre { padding: 10px 12px; border-radius: 8px; background: #fffc;
 button { border: 1px solid #142633; font: inherit; font-weight: 700; cursor: pointer }
 footer { bottom: 16px; left: 16px; right: 16px; width: fit-content; max-width: calc(100% - 32px) }
 pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wrap; font-size: 11px }
+#reticle { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
+  color: white; font-size: 30px; text-shadow: 0 0 5px #142633; pointer-events: none }
+#move:not([hidden]) { position: fixed; bottom: 94px; left: 16px; display: grid;
+  grid-template-columns: repeat(3,44px); gap: 4px; touch-action: none; user-select: none }
+#move button { width: 44px; height: 44px; padding: 0; touch-action: none }
+#move button:first-child { grid-column: 2; grid-row: 1 }
+#move button:nth-child(n+2) { grid-row: 2 }

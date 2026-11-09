@@ -6,6 +6,7 @@ import {
   STATIC_CAP, PACKET_BYTES, QUEUE
 } from './engine.js';
 import {Ledger,Stage,TransferPool} from './protocol.js';
+import {Walker,Chips,CHIP_COUNT,CHIP_FLOOR} from './motion.js';
 
 function run(generator) {
   let next;
@@ -99,6 +100,42 @@ test('overflow omits excess island visuals while extracting every voxel', () => 
   run(connectivity.detach(world,dirty,function* (island) { slots.push(bodies.reserve(island)); }));
   assert.deepEqual(slots,[0,1,2,3,-1,-1]);
   assert.equal(total(world),0);
+});
+
+test('walker steps onto a low block and stops at a wall until it is blasted', () => {
+  const world = new World(), walk = new Walker(), dirty = new Uint8Array(2);
+  for (const x of [31,32]) {
+    world.put(x,0,24,1);
+    for (let y = 0; y < 4; y++) world.put(x,y,23,1);
+  }
+  for (let i = 0; i < 60; i++) walk.step(world,0,-1);
+  assert.equal(walk.feet,1);
+  assert.ok(walk.z >= 24.3);
+  for (const x of [31,32]) run(blast(world,x,2,23,1,dirty));
+  for (let i = 0; i < 30; i++) walk.step(world,0,-1);
+  assert.ok(walk.z < 23);
+  assert.equal(walk.feet,0);
+});
+
+test('blast chips stage at the original voxel, bounce, and recycle without protecting terrain', () => {
+  const world = new World(), chips = new Chips(), dirty = new Uint8Array(2);
+  world.put(10,3,10,4);
+  assert.equal(run(blast(world,10,3,10,1,dirty,chips)),1);
+  assert.deepEqual([...chips.sample(1).slice(0,4)],[10.5,3.5,10.5,4]);
+  assert.equal(chips.sample(2)[3],0);
+  for (let i = 1; i < CHIP_COUNT; i++) chips.add(10,3,10,4,10,3,10);
+  world.put(11,3,10,2);
+  assert.equal(run(blast(world,11,3,10,1,dirty,chips)),1);
+  assert.equal(world.get(11,3,10),0);
+  chips.activate();
+  let bounced = false;
+  for (let step = 0; step < 180; step++) {
+    chips.step(world);
+    if (chips.state[0] === 2) assert.ok(chips.data[1] >= CHIP_FLOOR-1e-6);
+    if (Math.abs(chips.data[1]-CHIP_FLOOR) < 1e-6 && chips.vy[0] > 0) bounced = true;
+  }
+  assert.ok(bounced);
+  assert.equal(chips.state.indexOf(2),-1);
 });
 
 test('greedy masks, material splits, empty mesh, packing and six windings', () => {

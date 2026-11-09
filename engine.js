@@ -105,7 +105,7 @@ function dirtyAt(dirty, x) {
   if (x === 31 || x === 32) dirty[(x >> 5) ^ 1] = 1;
 }
 
-export function* blast(world, x, y, z, radius, dirty) {
+export function* blast(world, x, y, z, radius, dirty, chips) {
   if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z) ||
       !inside(x, y, z) || !Number.isFinite(radius) || radius <= 0) return 0;
   radius = Math.min(radius, MAX_RADIUS);
@@ -114,7 +114,10 @@ export function* blast(world, x, y, z, radius, dirty) {
   for (let k = Math.max(0, z - extent); k <= Math.min(31, z + extent); k++) {
     for (let j = Math.max(1, y - extent); j <= Math.min(31, y + extent); j++) {
       for (let i = Math.max(0, x - extent); i <= Math.min(63, x + extent); i++) {
-        if ((i-x)**2 + (j-y)**2 + (k-z)**2 > squared || !world.get(i,j,k)) continue;
+        if ((i-x)**2 + (j-y)**2 + (k-z)**2 > squared) continue;
+        const material = world.get(i,j,k);
+        if (!material) continue;
+        chips?.add(i,j,k,material,x,y,z);
         world.put(i,j,k,0);
         dirtyAt(dirty, i);
         removed++;

@@ -3,9 +3,11 @@ import {
   VERTEX_WORDS, STATIC_CAP, BODY_CAP, STEP, seedWorld, raycast, blast
 } from './engine.js';
 import {TransferPool} from './protocol.js';
+import {Walker,Chips} from './motion.js';
 
 const world = new World(), support = new Connectivity(), mesher = new Mesher();
 const bodies = new Bodies(), pool = new TransferPool();
+const walker = new Walker(), chips = new Chips();
 const dirty = new Uint8Array(CHUNKS), hit = new Int32Array(3), slab = new Float64Array(3);
 const queue = [];
 const WAIT = Symbol('waiting for transfer credit');
@@ -42,7 +44,7 @@ function* transaction(command) {
     yield* seedWorld(world);
     dirty.fill(1);
   } else if (raycast(world,command.origin,command.direction,hit,slab)) {
-    const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty);
+    const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
     if (removed) yield* support.detach(world,dirty,present);
   }
   for (let section = 0; section < CHUNKS; section++) {
@@ -80,17 +82,23 @@ function pump() {
   sliceCount++;
   sliceTotal += elapsed;
   sliceMax = Math.max(sliceMax,elapsed);
-  if (awaiting) postMessage({type:'end',epoch,id,mask});
+  if (awaiting) postMessage({type:'end',epoch,id,mask,chips:chips.sample(1)});
   else if (!waiting) schedule();
 }
 
-function tick() {
+function tick({dx,dz}) {
   const now = performance.now();
   if (lastTick) carry += Math.min((now-lastTick)/1000,STEP*4);
   lastTick = now;
   let steps = 0;
-  while (carry >= STEP && steps++ < 4) { bodies.step(); carry -= STEP; }
-  const pose = {type:'pose',epoch,id:applied,sliceCount,sliceTotal,sliceMax,queueHigh,droppedBodies};
+  while (carry >= STEP && steps++ < 4) {
+    bodies.step();
+    chips.step(world);
+    walker.step(world,dx,dz);
+    carry -= STEP;
+  }
+  const pose = {type:'pose',epoch,id:applied,sliceCount,sliceTotal,sliceMax,queueHigh,droppedBodies,
+    x:walker.x,z:walker.z,feet:walker.feet,chips:chips.sample(2)};
   for (let i = 0; i < BODIES; i++) pose[i] = bodies.state[i] === 2 ? bodies.y[i] : null;
   postMessage(pose);
 }
@@ -109,13 +117,15 @@ self.onmessage = ({data: m}) => {
     job = null;
     awaiting = false;
     bodies.state.fill(0);
+    chips.state.fill(0);
+    walker.reset();
     support.island.clear();
     lastTick = carry = 0;
     schedule();
     return;
   }
   if (m.epoch !== epoch) return;
-  if (m.type === 'tick') tick();
+  if (m.type === 'tick') tick(m);
   if (m.type === 'pause') lastTick = carry = 0;
   if (m.type === 'blast') {
     if (queue.length + Number(Boolean(job || awaiting)) >= QUEUE) {
@@ -129,8 +139,7 @@ self.onmessage = ({data: m}) => {
     awaiting = false;
     applied = id;
     bodies.activate();
-    lastTick = performance.now();
-    carry = 0;
+    chips.activate();
     schedule();
   }
 };

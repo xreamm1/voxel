@@ -50,6 +50,7 @@ export class Stage {
   id = -1;
   mask = 0;
   expected = -1;
+  chips = null;
   packets = [];
   clear(recycle) {
     for (const packet of this.packets) recycle(packet);
@@ -57,6 +58,7 @@ export class Stage {
     this.id = -1;
     this.mask = 0;
     this.expected = -1;
+    this.chips = null;
   }
   receive(message, ledger, recycle) {
     if (!ledger.current(message)) {
@@ -70,6 +72,7 @@ export class Stage {
       this.packets.push(message);
     } else {
       this.expected = message.mask;
+      this.chips = message.chips;
     }
   }
   ready() { return this.id >= 0 && this.packets.length === 0 && this.mask === this.expected; }

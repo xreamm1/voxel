@@ -8,6 +8,12 @@ network run `npm run dev -- --host 0.0.0.0` and open port 5173 on the host's LAN
 Use `npm test` for deterministic engine/protocol tests and `npm run build` followed
 by `npm run preview` for the production build.
 
+Choose **Walk** for first-person movement. Use WASD, the arrow keys, or the
+on-screen directional pad. Drag the canvas to look around and tap to blast
+at the reticle. Choose **Orbit** to return to the overview.
+To generate another copy, place `bootstrap.sh` in an empty directory and
+run `bash bootstrap.sh` there.
+
 ## Bounds and protocol
 
 - 64 × 32 × 32 meters, two 32³ chunks, 1 m voxels. Anchor cells occupy world y=0.
@@ -21,14 +27,14 @@ by `npm run preview` for the production build.
   removes the island normally and increments the omission counter.
 - One quad costs 40 bytes. Mesh capacity is 3,440,680 bytes each on CPU and GPU.
   Worker voxel/BFS arrays use 458,752 bytes, plus small workspaces and two
-  491,520-byte transferable packets. The maximum is 11 draws (2 static, 8
-  fragment, 1 ground). Framebuffers, driver copies, JS objects, and library
+  491,520-byte transferable packets. The maximum is 12 draws (2 static, 8
+  island sections, 1 instanced chip mesh, 1 ground). Framebuffers, driver copies, JS objects, and library
   allocations are outside the tracked buffer estimate.
 - Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius}`,
-  `activate{epoch,id}`, `tick{epoch}`, and `pause{epoch}`. Four input credits
+  `activate{epoch,id}`, `tick{epoch,dx,dz}`, and `pause{epoch}`. Four input credits
   include the executing command. New taps are dropped when all credits are used.
 - Worker sends `mesh{epoch,id,slot,target,quads,buffer}` followed by
-  `end{epoch,id,mask}`. Targets 0–1 are static sections and targets 2–9
+  `end{epoch,id,mask,chips}`. Targets 0–1 are static sections and targets 2–9
   are body sections. Indices start at byte 196608. The main thread copies active
   ranges into persistent attributes, stages one packet per rendered frame, and
   sends `recycle{slot,buffer}` with transfer after upload or stale rejection.
@@ -39,6 +45,12 @@ by `npm run preview` for the production build.
   returns `pose{epoch,id,0,1,2,3,...stats}`, with null slots for inactive bodies.
   The simulation uses 60 fixed steps per simulated second, capped at four per
   tick, and bodies expire after three simulated seconds.
+- The worker resolves walking against static voxels with axis-separated sliding
+  and one-voxel step-up. Up to 48 directly blasted voxels become rotating
+  chips with impulse, gravity and damped collision against the ground and
+  static voxels. Extra cells still break. Chip pose and birth snapshots are
+  fixed 960-byte structured-clone arrays. Chips and islands do not collide
+  with each other.
 - Initial resolution is 50% of CSS pixels and adapts through 66% and 82%,
   capped at 1280 × 900. Quality never changes the simulation. WebGL 2 and a
   module worker are required. Context loss requires reload.

@@ -7,9 +7,16 @@
 <link rel="stylesheet" href="./style.css">
 <canvas aria-label="Interactive voxel construction yard"></canvas>
 <header><strong>KNOCKOUT YARD</strong><span>01 / DEMOLITION SITE</span></header>
-<aside><button id="reset" disabled>Reset yard</button></aside>
+<aside><button id="walk" disabled>Walk</button> <button id="reset" disabled>Reset yard</button></aside>
+<div id="reticle" hidden aria-hidden="true">+</div>
+<div id="move" hidden aria-label="Movement controls">
+  <button data-key="KeyW" aria-label="Forward">▲</button>
+  <button data-key="KeyA" aria-label="Left">◀</button>
+  <button data-key="KeyS" aria-label="Back">▼</button>
+  <button data-key="KeyD" aria-label="Right">▶</button>
+</div>
 <footer><span id="status" role="status">Starting the yard…</span><br>
-<small>Tap to blast · Drag to orbit · Pinch or scroll to zoom</small></footer>
+<small id="help">Tap to blast · Drag to orbit · Pinch or scroll to zoom</small></footer>
 <pre id="metrics" hidden></pre>
 <script type="module" src="./main.js"></script>
 </html>

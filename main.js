@@ -5,6 +5,8 @@ import {
 } from './engine.js';
 import {Ledger,Stage} from './protocol.js';
 import {benchmark} from './bench.js';
+import {CHIP_COUNT,CHIP_STRIDE} from './motion.js';
+import {walking} from './walk.js';
 
 const canvas = document.querySelector('canvas'), status = document.querySelector('#status');
 const button = document.querySelector('#reset'), metrics = document.querySelector('#metrics');
@@ -15,6 +17,7 @@ function fail(message) {
   worker?.terminate();
   status.textContent = message;
   button.disabled = true;
+  document.querySelector('#walk').disabled = true;
 }
 
 try { start(); }
@@ -47,6 +50,7 @@ function start() {
     controls.update();
   }
   home();
+  const walk = walking(canvas,camera,controls,home);
 
   const material = new T.RawShaderMaterial({
     glslVersion:T.GLSL3,
@@ -58,6 +62,10 @@ function start() {
       uniform mat4 projectionMatrix;
       uniform mat4 modelViewMatrix;
       in uint packedVoxel;
+      #ifdef CHIP_INSTANCES
+      in mat4 instanceMatrix;
+      in float chipMaterial;
+      #endif
       flat out uint materialId;
       flat out float shade;
       void main() {
@@ -67,7 +75,12 @@ function start() {
         if ((axis & 1u) != 0u) normal = -normal;
         shade = 0.63 + 0.37 * max(0.0, dot(normal,normalize(vec3(0.5,0.9,0.6))));
         materialId = (packedVoxel >> 21u) & 255u;
+        #ifdef CHIP_INSTANCES
+        materialId = uint(chipMaterial);
+        gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(p - 0.5,1.0);
+        #else
         gl_Position = projectionMatrix * modelViewMatrix * vec4(p,1.0);
+        #endif
       }`,
     fragmentShader:`
       precision highp float;
@@ -120,6 +133,55 @@ function start() {
   ground.mesh.scale.set(3.125,1,1.875);
   ground.geometry.setDrawRange(0,6);
 
+  const cube = new T.BoxGeometry(1,1,1);
+  const p = cube.getAttribute('position'), n = cube.getAttribute('normal');
+  const packed = new Uint32Array(p.count);
+  for (let i = 0; i < p.count; i++) {
+    const nx = n.getX(i), ny = n.getY(i);
+    const face = nx ? Number(nx < 0) : ny ? 2 + Number(ny < 0) : 4 + Number(n.getZ(i) < 0);
+    packed[i] = pack(p.getX(i)+.5,p.getY(i)+.5,p.getZ(i)+.5,face,1);
+  }
+  const chipGeometry = new T.BufferGeometry();
+  chipGeometry.setAttribute('packedVoxel',new T.BufferAttribute(packed,1));
+  chipGeometry.setIndex(new T.BufferAttribute(Uint32Array.from(cube.index.array),1));
+  const chipMaterialId = new T.InstancedBufferAttribute(new Float32Array(CHIP_COUNT),1);
+  chipMaterialId.setUsage(T.DynamicDrawUsage);
+  chipGeometry.setAttribute('chipMaterial',chipMaterialId);
+  const chipMaterial = material.clone();
+  chipMaterial.defines.CHIP_INSTANCES = 1;
+  const chips = new T.InstancedMesh(chipGeometry,chipMaterial,CHIP_COUNT);
+  chips.instanceMatrix.setUsage(T.DynamicDrawUsage);
+  chips.frustumCulled = false;
+  chips.onAfterRender = () => { if (chips.count) draws[1]++; };
+  const chipData = new Float32Array(CHIP_COUNT*CHIP_STRIDE);
+  const chipTransform = new T.Object3D();
+  chipTransform.scale.setScalar(.6);
+  chipTransform.position.y = -100;
+  chipTransform.updateMatrix();
+  chips.setMatrixAt(0,chipTransform.matrix);
+  chips.count = 1;
+  scene.add(chips);
+
+  function showChips() {
+    let count = 0;
+    for (let i = 0; i < chipData.length; i += CHIP_STRIDE) {
+      if (!chipData[i+3]) continue;
+      chipTransform.position.set(chipData[i],chipData[i+1],chipData[i+2]);
+      chipTransform.rotation.set(chipData[i+4],chipData[i+4]*.73,chipData[i+4]*.39);
+      chipTransform.updateMatrix();
+      chips.setMatrixAt(count,chipTransform.matrix);
+      chipMaterialId.array[count++] = chipData[i+3];
+    }
+    chips.visible = Boolean(count);
+    chips.count = count;
+    if (!count) return;
+    chips.instanceMatrix.clearUpdateRanges();
+    chipMaterialId.clearUpdateRanges();
+    chips.instanceMatrix.addUpdateRange(0,count*16);
+    chipMaterialId.addUpdateRange(0,count);
+    chips.instanceMatrix.needsUpdate = chipMaterialId.needsUpdate = true;
+  }
+
   const scales = [.50,.66,.82];
   let quality = 0, windowFrames = 0, slow = 0, good = 0;
   function resize() {
@@ -133,6 +195,7 @@ function start() {
   resize();
   renderer.compile(scene,camera);
   renderer.render(scene,camera);
+  chips.visible = false;
   if (gl.getError() !== gl.NO_ERROR) throw new Error('WebGL 2 failed to initialize the voxel renderer.');
   for (const pair of terrain) for (const entry of pair) entry.mesh.visible = false;
   for (const entry of debris) entry.mesh.visible = false;
@@ -146,7 +209,9 @@ function start() {
   const renderBytes = (CHUNKS*2*STATIC_CAP + CHUNKS*BODIES*BODY_CAP + 1)*40;
   const tracked = {
     renderCpuBytes:renderBytes, gpuMeshCapacityBytes:renderBytes,
-    workerAndTransferBytes:7*VOLUME + SLOTS*PACKET_BYTES + 4096,
+    workerAndTransferBytes:7*VOLUME + SLOTS*PACKET_BYTES + 4096 + CHIP_COUNT*61,
+    chipCpuGpuBytes:2*(CHIP_COUNT*68 + packed.byteLength + chipGeometry.index.array.byteLength) +
+      chipData.byteLength,
     telemetryHistogramBytes:params.has('bench') ? 5*1025*4 : 0
   };
   const bench = params.has('bench') ? benchmark(params,metrics,shoot,reset,tracked) : null;
@@ -171,6 +236,9 @@ function start() {
         if (m.epoch !== ledger.epoch) return;
         stats = m;
         if (m.id !== ledger.applied || !ready) return;
+        walk.pose(m);
+        chipData.set(m.chips);
+        showChips();
         bench?.positions(m);
         const now = performance.now();
         for (let slot = 0; slot < BODIES; slot++) {
@@ -195,6 +263,8 @@ function start() {
     if (failed) return;
     ready = false;
     button.disabled = true;
+    walk.ready(false);
+    walk.reset();
     status.textContent = 'Preparing a fresh yard…';
     ledger.reset();
     stage.clear(recycle);
@@ -211,6 +281,7 @@ function start() {
 
   const ray = new T.Raycaster(), ndc = new T.Vector2();
   let pointer = null, downX = 0, downY = 0, tap = false, downTime = 0;
+  let lastX = 0, lastY = 0;
   const pointers = new Set();
   canvas.addEventListener('pointerdown',event => {
     pointers.add(event.pointerId);
@@ -218,6 +289,9 @@ function start() {
       pointer = event.pointerId;
       downX = event.clientX;
       downY = event.clientY;
+      lastX = downX;
+      lastY = downY;
+      if (walk.active) canvas.setPointerCapture(event.pointerId);
       downTime = performance.now();
       tap = true;
     } else tap = false;
@@ -226,7 +300,13 @@ function start() {
     return (event.clientX-downX)**2 + (event.clientY-downY)**2 > 64;
   }
   canvas.addEventListener('pointermove',event => {
-    if (event.pointerId === pointer && moved(event)) tap = false;
+    if (event.pointerId !== pointer || !pointers.has(pointer)) return;
+    if (moved(event)) tap = false;
+    if (walk.active && !tap && pointers.size === 1) {
+      walk.look(event.clientX-lastX,event.clientY-lastY);
+    }
+    lastX = event.clientX;
+    lastY = event.clientY;
   });
   canvas.addEventListener('pointerup',event => {
     pointers.delete(event.pointerId);
@@ -234,6 +314,7 @@ function start() {
     tap = false;
     const rect = canvas.getBoundingClientRect();
     ndc.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
+    if (walk.active) { ndc.set(0,0); walk.aim(); }
     ray.setFromCamera(ndc,camera);
     shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),4.75);
   });
@@ -284,7 +365,16 @@ function start() {
     entry.geometry.setDrawRange(0,entry.count);
   }
   function publish(now) {
-    if (stage.id === 0) for (let slot = 0; slot < BODIES; slot++) hideBody(slot);
+    if (stage.id === 0) {
+      for (let slot = 0; slot < BODIES; slot++) hideBody(slot);
+      chipData.fill(0);
+    }
+    for (let i = 0; i < chipData.length; i += CHIP_STRIDE) {
+      if (stage.chips?.[i+3]) {
+        for (let k = 0; k < CHIP_STRIDE; k++) chipData[i+k] = stage.chips[i+k];
+      }
+    }
+    showChips();
     for (let s = 0; s < CHUNKS; s++) {
       if (!(stage.mask & (1 << s))) continue;
       const old = terrain[s][shown[s]];
@@ -319,7 +409,7 @@ function start() {
           windowFrames = slow = 0;
         }
       }
-      controls.update();
+      if (walk.active) walk.aim(); else controls.update();
       const packet = stage.packets.shift();
       if (packet) stageMesh(packet);
       const commit = stage.ready();
@@ -347,12 +437,15 @@ function start() {
         if (revision === 0) {
           ready = true;
           button.disabled = false;
+          walk.ready(!bench);
           status.textContent = 'Yard open';
         }
       }
       if (!tickPending && !document.hidden) {
         tickPending = true;
-        worker.postMessage({type:'tick',epoch:ledger.epoch});
+        const direction = walk.movement();
+        worker.postMessage({type:'tick',epoch:ledger.epoch,dx:ready ? direction[0] : 0,
+          dz:ready ? direction[1] : 0});
       }
       bench?.frame(now,dt,ready,quality,stats,draws[0],draws[1],draws[2],active);
       requestAnimationFrame(frame);
