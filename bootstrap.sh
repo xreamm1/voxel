@@ -49,6 +49,7 @@ cat > index.html <<'HTML'
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="./style.css">
 <canvas aria-label="Interactive voxel construction yard"></canvas>
+<div id="weather" aria-hidden="true"></div>
 <header><strong>KNOCKOUT YARD</strong><span>01 / DEMOLITION SITE</span></header>
 <aside><button id="view" hidden aria-label="First person">View</button> <button id="walk" disabled>Walk</button>
 <button id="reset" disabled>Reset yard</button> <button id="menu">Menu</button></aside>
@@ -56,15 +57,28 @@ cat > index.html <<'HTML'
   <button id="previous-tool" aria-label="Previous tool">‹</button>
   <output id="tool-name"></output>
   <button id="next-tool" aria-label="Next tool">›</button>
+  <div id="categories">
+    <button data-group="1" aria-label="Melee">1</button>
+    <button data-group="2" aria-label="Firearms">2</button>
+    <button data-group="3" aria-label="Explosives">3</button>
+  </div>
 </div>
 <dialog id="loadout">
   <form method="dialog"><button aria-label="Close menu">×</button></form>
-  <h2>Yard loadout</h2>
-  <p>Pick a demolition tool. Q/E cycles the loadout.</p>
+  <h2>Demolition menu</h2>
+  <p>Voxels destroyed <strong id="destroyed">0</strong></p>
+  <div class="menu-options">
+    <button id="weather-toggle">Weather · Rain</button>
+    <button id="refresh-map">Refresh map</button>
+  </div>
   <div class="loadout-tools">
-    <button data-tool="0"><small>1 · MELEE</small>Sledge</button>
-    <button data-tool="1"><small>2 · FIREARMS</small>Rifle</button>
-    <button data-tool="2"><small>3 · EXPLOSIVES</small>RPG</button>
+    <section><h3>1 · Melee</h3>
+      <button data-tool="0">Sledge</button><button data-tool="1">Huge Hammer</button>
+      <button data-tool="2">Pickaxe</button></section>
+    <section><h3>2 · Firearms</h3>
+      <button data-tool="3">Pistol</button><button data-tool="4">Rifle</button></section>
+    <section><h3>3 · Explosives</h3>
+      <button data-tool="5">RPG</button><button data-tool="6">C4</button></section>
   </div>
 </dialog>
 <div id="reticle" hidden aria-hidden="true">+</div>
@@ -81,7 +95,7 @@ cat > index.html <<'HTML'
 </html>
 HTML
 cat > style.css <<'CSS'
-:root { font: 15px system-ui,sans-serif; color: #142633; background: #b9e5fc }
+:root { font: 15px system-ui,sans-serif; color: #eff3f4; background: #141422 }
 * { box-sizing: border-box }
 body { margin: 0; overflow: hidden }
 canvas { display: block; width: 100vw; height: 100dvh; touch-action: none }
@@ -91,8 +105,8 @@ header { top: 16px; left: 16px; display: grid; gap: 3px }
 header strong { font-size: clamp(16px,4vw,27px); letter-spacing: .06em }
 header span { font-size: 10px; font-weight: 750; letter-spacing: .16em }
 aside { top: 16px; right: 16px }
-button, footer, pre { padding: 10px 12px; border-radius: 8px; background: #fffc; color: inherit }
-button { border: 1px solid #142633; font: inherit; font-weight: 700; cursor: pointer }
+button, footer, pre { padding: 10px 12px; border-radius: 8px; background: #10151edb; color: inherit }
+button { border: 1px solid #8e98a1; font: inherit; font-weight: 700; cursor: pointer }
 footer { bottom: 16px; left: 16px; right: 16px; width: fit-content; max-width: calc(100% - 32px) }
 pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wrap; font-size: 11px }
 #reticle { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -103,15 +117,26 @@ pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wra
 #move button:first-child { grid-column: 2; grid-row: 1 }
 #move button:nth-child(n+2) { grid-row: 2 }
 #tools:not([hidden]) { position: fixed; right: 16px; bottom: 94px; display: flex; align-items: center;
-  gap: 6px; padding: 4px; border-radius: 10px; background: #fffd }
+  gap: 6px; padding: 4px; border-radius: 10px; background: #10151edb; flex-wrap: wrap }
+#categories { display: flex; flex-basis: 100%; gap: 4px; justify-content: center }
+#categories button { min-width: 35px; padding: 4px 8px }
+#categories button[aria-pressed="true"] { background: #e6eaf0; color: #151925 }
 #tool-name { min-width: 76px; text-align: center; font-weight: 750 }
 #loadout { color: #edf5f9; background: #152631; border: 1px solid #55717e;
   border-radius: 14px; max-width: calc(100vw - 24px); padding: 20px }
 #loadout::backdrop { background: #12222db8 }
 #loadout form { float: right }
-.loadout-tools { display: grid; gap: 6px }
-.loadout-tools button { text-align: left }
-.loadout-tools small { display: block; font-size: 10px; letter-spacing: .09em }
+.loadout-tools { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px }
+.loadout-tools section { display: grid; gap: 5px; align-content: start }
+.loadout-tools h3 { margin: 12px 0 4px; font-size: 13px }
+.loadout-tools button { text-align: left; font-size: 13px; padding: 7px }
+.menu-options { display: flex; gap: 6px; flex-wrap: wrap }
+#weather { position: fixed; inset: 0; overflow: hidden; pointer-events: none }
+#weather::before { content: ''; position: absolute; inset: -120px; opacity: .22;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='137' height='113' viewBox='0 0 137 113'%3E%3Cpath stroke='%23b3c9ee' stroke-opacity='.55' d='m17 8 -3 21 m58 21 -3 27 m40 -69 -3 30 m28 36 -3 24 m-88 -8 -3 22 m-38 -65 -2 16'/%3E%3C/svg%3E");
+  animation: rain .28s linear infinite }
+@keyframes rain { to { transform: translate(-15px,113px) } }
+@media (prefers-reduced-motion: reduce) { #weather::before { animation: none } }
 @media (max-width: 500px) {
   header span, header strong { display: none }
   aside { left: 12px; right: auto }
@@ -176,13 +201,31 @@ export function* seedWorld(world) {
   yield* box(22, 41, 8, 8, 12, 19, 3);
   yield* box(23, 40, 14, 14, 12, 19, 1);
   yield* box(25, 38, 15, 15, 14, 17, 4);
-  yield* box(29, 34, 0, 0, 20, 30, 6);
+  yield* box(17, 46, 0, 0, 19, 31, 13);
+  yield* box(17, 46, 1, 1, 19, 31, 8);
+  yield* box(18, 26, 1, 1, 23, 29, 11);
+  yield* box(37, 45, 1, 1, 23, 29, 11);
   for (const x of [20,38]) {
-    yield* box(x, x+5, 0, 0, 24, 29, 7);
     const tree = x+2;
-    yield* box(tree, tree, 1, 4, 26, 26, 5);
-    yield* box(tree-1, tree+1, 4, 6, 25, 27, 7);
-    yield* box(tree-2, tree+2, 5, 5, 26, 26, 7);
+    yield* box(tree, tree, 2, 5, 26, 26, 9);
+    yield* box(tree-1, tree+1, 5, 7, 25, 27, 11);
+    yield* box(tree-2, tree+2, 6, 6, 26, 26, 7);
+    yield* box(x, x+3, 2, 2, 29, 29, 9);
+  }
+  for (const x of [26,37]) {
+    yield* box(x,x,2,7,21,21,13);
+    yield* box(x,x,2,6,30,30,5);
+    yield* box(x,x,7,7,30,30,12);
+  }
+  yield* box(26,37,8,8,21,21,13);
+  for (const x of [5,46]) {
+    for (let col = x; col <= x+12; col++) {
+      for (let y = 1; y <= 11; y++) {
+        const window = y%6 >= 2 && y%6 <= 4 && (col-x)%4 >= 1 && (col-x)%4 <= 2;
+        world.put(col,y,6,window ? 10 : 9);
+      }
+      yield;
+    }
   }
 }
 
@@ -448,15 +491,15 @@ cat > motion.js <<'MOTION'
 import {WIDTH,SIZE,STEP} from './engine.js';
 
 export const CHIP_COUNT = 48, CHIP_STRIDE = 5, CHIP_FLOOR = .53;
-export const SPAWN_X = 32, SPAWN_Z = 26, EYE = 1.65;
+export const SPAWN_X = 32, SPAWN_Z = 26, SPAWN_FEET = 2, EYE = 1.65;
 const RADIUS = .3, SPEED = 5;
 
 export class Walker {
   x = SPAWN_X;
   z = SPAWN_Z;
-  feet = 0;
+  feet = SPAWN_FEET;
 
-  reset() { this.x = SPAWN_X; this.z = SPAWN_Z; this.feet = 0; }
+  reset() { this.x = SPAWN_X; this.z = SPAWN_Z; this.feet = SPAWN_FEET; }
 
   solid(world,x,y,z) {
     const loX = Math.floor(x-RADIUS), hiX = Math.floor(x+RADIUS);
@@ -618,6 +661,8 @@ export class Stage {
   mask = 0;
   expected = -1;
   chips = null;
+  charge = null;
+  removed = 0;
   packets = [];
   clear(recycle) {
     for (const packet of this.packets) recycle(packet);
@@ -626,6 +671,8 @@ export class Stage {
     this.mask = 0;
     this.expected = -1;
     this.chips = null;
+    this.charge = null;
+    this.removed = 0;
   }
   receive(message, ledger, recycle) {
     if (!ledger.current(message)) {
@@ -640,6 +687,8 @@ export class Stage {
     } else {
       this.expected = message.mask;
       this.chips = message.chips;
+      this.charge = message.charge;
+      this.removed = message.removed || 0;
     }
   }
   ready() { return this.id >= 0 && this.packets.length === 0 && this.mask === this.expected; }
@@ -662,6 +711,7 @@ const WAIT = Symbol('waiting for transfer credit');
 let epoch = 0, id = 0, applied = -1, job, awaiting = false, timer = null, mask = 0;
 let droppedBodies = 0, lastTick = 0, carry = 0, sliceMax = 0, sliceCount = 0, sliceTotal = 0;
 let queueHigh = 0;
+let charge = null, removed = 0;
 
 function* mesh(source, section, target, cap) {
   let slot;
@@ -688,18 +738,35 @@ function* transaction(command) {
   id = command.id;
   dirty.fill(0);
   mask = 0;
+  removed = 0;
   if (id === 0) {
     yield* seedWorld(world);
     dirty.fill(1);
-  } else if (raycast(world,command.origin,command.direction,hit,slab,
-    Number.isFinite(command.reach) ? Math.max(0,Math.min(100,command.reach)) : Infinity)) {
+  } else {
+    if (command.charge && charge) {
+      hit.set(charge.cell);
+      charge = null;
+    } else {
+      const reach = Number.isFinite(command.reach) ? Math.max(0,Math.min(100,command.reach)) : Infinity;
+      if (!raycast(world,command.origin,command.direction,hit,slab,reach)) return;
+      if (command.charge) {
+        const pose = Array.from(hit,value => value+.5);
+        let axis = 0;
+        for (let i = 1; i < 3; i++) {
+          if (Math.abs(command.direction[i]) > Math.abs(command.direction[axis])) axis = i;
+        }
+        pose[axis] -= Math.sign(command.direction[axis])*.62;
+        charge = {cell:Array.from(hit),pose};
+        return;
+      }
+    }
     if (command.rocket) {
       const x = hit[0]+.5, y = hit[1]+.5, z = hit[2]+.5;
       const ms = Math.max(70,Math.hypot(x-command.origin[0],y-command.origin[1],z-command.origin[2])*9);
       postMessage({type:'launch',epoch,id,origin:command.origin,x,y,z,ms});
       yield ms;
     }
-    const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
+    removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
     if (removed) yield* support.detach(world,dirty,present);
   }
   for (let section = 0; section < CHUNKS; section++) {
@@ -741,7 +808,7 @@ function pump() {
   sliceCount++;
   sliceTotal += elapsed;
   sliceMax = Math.max(sliceMax,elapsed);
-  if (awaiting) postMessage({type:'end',epoch,id,mask,chips:chips.sample(1)});
+  if (awaiting) postMessage({type:'end',epoch,id,mask,chips:chips.sample(1),charge,removed});
   else if (!waiting) schedule();
 }
 
@@ -773,6 +840,7 @@ self.onmessage = ({data: m}) => {
     timer = null;
     epoch = m.epoch;
     applied = -1;
+    charge = null;
     queue.length = 0;
     queue.push({id:0});
     job = null;
@@ -928,22 +996,33 @@ export function benchmark(params, output, shoot, reset, memory) {
 }
 BENCH
 cat > walk.js <<'WALK'
-import {EYE,SPAWN_X,SPAWN_Z} from './motion.js';
+import {EYE,SPAWN_FEET,SPAWN_X,SPAWN_Z} from './motion.js';
 
 export function walking(canvas,camera,controls,home) {
   const button = document.querySelector('#walk'), move = document.querySelector('#move');
   const reticle = document.querySelector('#reticle'), help = document.querySelector('#help');
   const view = document.querySelector('#view'), tools = document.querySelector('#tools');
   const name = document.querySelector('#tool-name'), menu = document.querySelector('#loadout');
+  const groups = [...document.querySelectorAll('[data-group]')];
   const loadout = [
-    {name:'Sledge',radius:2.5,reach:4,cooldown:1617,animation:1617,equip:1000},
-    {name:'Rifle',radius:1,reach:60,cooldown:145,animation:145,equip:0},
-    {name:'RPG',radius:5.5,reach:64,cooldown:650,animation:367,equip:0}
+    {name:'Sledge',group:1,radius:2.5,reach:4,cooldown:1617,animation:1617,equip:1000},
+    {name:'Huge Hammer',group:1,radius:4,reach:5,cooldown:1800,animation:1617,equip:1000},
+    {name:'Pickaxe',group:1,radius:1,reach:4,cooldown:680,animation:550,equip:250},
+    {name:'Pistol',group:2,radius:.7,reach:35,cooldown:300,animation:190,equip:233},
+    {name:'Rifle',group:2,radius:1,reach:60,cooldown:145,animation:145,equip:0},
+    {name:'RPG',group:3,radius:5.5,reach:64,cooldown:650,animation:367,equip:0,rocket:true},
+    {name:'C4',group:3,radius:6,reach:5,cooldown:450,animation:320,equip:0,charge:true}
   ];
   const keys = new Set(), touches = new Map();
   const movement = new Float64Array(2);
   let yaw, pitch, x, z, feet, phase = 0, stride = 0, swing = -Infinity;
-  let selected = 2, third = true, equippedAt = -Infinity;
+  let selected = 5, third = true, equippedAt = -Infinity, chargePlaced = false;
+  function updateLabel() {
+    name.textContent = loadout[selected].charge && chargePlaced ? 'Detonate C4' : loadout[selected].name;
+    for (const group of groups) {
+      group.setAttribute('aria-pressed',String(Number(group.dataset.group) === loadout[selected].group));
+    }
+  }
   function equip(index) {
     const next = (index+loadout.length)%loadout.length;
     if (next !== selected) {
@@ -951,8 +1030,14 @@ export function walking(canvas,camera,controls,home) {
       equippedAt = performance.now();
       swing = -Infinity;
     }
-    name.textContent = loadout[selected].name;
+    updateLabel();
   }
+  function selectGroup(group) {
+    const current = loadout[selected].group === group ? selected+1 : 0;
+    const next = loadout.findIndex((tool,index) => tool.group === group && index >= current);
+    equip(next < 0 ? loadout.findIndex(tool => tool.group === group) : next);
+  }
+  for (const group of groups) group.onclick = () => selectGroup(Number(group.dataset.group));
   equip(selected);
   document.querySelector('#previous-tool').onclick = () => equip(selected-1);
   document.querySelector('#next-tool').onclick = () => equip(selected+1);
@@ -976,6 +1061,8 @@ export function walking(canvas,camera,controls,home) {
     get x() { return x; }, get z() { return z; }, get feet() { return feet; },
     get yaw() { return yaw; }, get gait() { return Math.sin(phase)*stride; },
     get tool() { return selected; },
+    get melee() { return loadout[selected].group === 1; },
+    setCharge(placed) { chargePlaced = placed; updateLabel(); },
     attack(ray,now) {
       const tool = loadout[selected];
       if (now-swing < tool.cooldown || now-equippedAt < tool.equip) return;
@@ -990,7 +1077,8 @@ export function walking(canvas,camera,controls,home) {
       return duration ? Math.max(0,1-(now-equippedAt)/duration) : 0;
     },
     reset() {
-      yaw = pitch = feet = 0;
+      yaw = pitch = 0;
+      feet = SPAWN_FEET;
       phase = stride = 0;
       swing = -Infinity;
       equippedAt = -Infinity;
@@ -1061,7 +1149,7 @@ export function walking(canvas,camera,controls,home) {
       if (event.code === 'KeyQ') equip(selected-1);
       if (event.code === 'KeyE') equip(selected+1);
       if (event.code === 'KeyV') toggleView();
-      if (/^Digit[123]$/.test(event.code)) equip(Number(event.code.at(-1))-1);
+      if (/^Digit[123]$/.test(event.code)) selectGroup(Number(event.code.at(-1)));
     }
     const key = bindings[event.code];
     if (!key) return;
@@ -1124,7 +1212,7 @@ function start() {
     throw new Error('The voxel shader could not compile. Reload or try another WebGL 2 browser.');
   };
   const scene = new T.Scene();
-  scene.background = new T.Color('#b9e5fc');
+  scene.background = new T.Color('#171526');
   const camera = new T.PerspectiveCamera(44,1,0.15,220);
   const controls = new OrbitControls(camera,canvas);
   controls.enablePan = false;
@@ -1142,8 +1230,10 @@ function start() {
 
   const material = new T.RawShaderMaterial({
     glslVersion:T.GLSL3,
-    uniforms:{palette:{value:['#293940','#ffc736','#17b7b3','#ff6b47',
-      '#f2f5ee','#607584','#9bb0ae','#70aa5d'].map(color => new T.Color(color))}},
+    uniforms:{palette:{value:['#293940','#f0ad33','#468a94','#b44539',
+      '#eeeeed','#636b76','#46504b','#396032','#575962','#745143',
+      '#415979','#4a693e','#eef2fb','#777278','#8c794d','#66646d']
+      .map(color => new T.Color(color))}},
     vertexShader:`
       precision highp float;
       precision highp int;
@@ -1173,12 +1263,13 @@ function start() {
     fragmentShader:`
       precision highp float;
       precision highp int;
-      uniform vec3 palette[8];
+      uniform vec3 palette[16];
       flat in uint materialId;
       flat in float shade;
       out vec4 pixel;
       void main() {
-        vec3 linear = palette[int(materialId & 7u)] * shade;
+        float lighting = materialId == 12u ? 1.0 : 0.57 * shade;
+        vec3 linear = palette[int(materialId & 15u)] * lighting;
         vec3 rgb = mix(12.92 * linear,1.055 * pow(linear,vec3(1.0/2.4))-0.055,
                        step(vec3(0.0031308),linear));
         pixel = vec4(rgb,1.0);
@@ -1252,7 +1343,7 @@ function start() {
 
   const actorGeometry = chipGeometry.clone();
   const actorColors = actorGeometry.getAttribute('chipMaterial');
-  const actor = new T.InstancedMesh(actorGeometry,chipMaterial,9);
+  const actor = new T.InstancedMesh(actorGeometry,chipMaterial,10);
   actor.instanceMatrix.setUsage(T.DynamicDrawUsage);
   actor.frustumCulled = false;
   actor.count = 1;
@@ -1261,7 +1352,7 @@ function start() {
   scene.add(actor);
   const root = new T.Object3D(), part = new T.Object3D(), matrix = new T.Matrix4();
   const rocketFrom = new T.Vector3(), rocketTo = new T.Vector3();
-  let rocket = null, actorCount = 0;
+  let rocket = null, actorCount = 0, charge = null;
   function box(x,y,z,sx,sy,sz,color,angle = 0) {
     part.position.set(x,y,z);
     part.scale.set(sx,sy,sz);
@@ -1276,7 +1367,7 @@ function start() {
     if (walk.thirdPerson) {
       const gait = walk.gait, action = walk.action(now);
       const equip = walk.equipping(now);
-      const swing = walk.tool === 0 ? Math.sin(action*Math.PI)*1.8 + Math.sin(equip*Math.PI)*.8 :
+      const swing = walk.melee ? Math.sin(action*Math.PI)*1.8 + Math.sin(equip*Math.PI)*.8 :
         action*action*.45;
       root.position.set(walk.x,walk.feet+Math.abs(gait)*.055,walk.z);
       root.rotation.y = walk.yaw;
@@ -1288,8 +1379,9 @@ function start() {
       box(.45,1.24,-gait*.11-swing*.13,.21,.51,.24,4,-gait*.65-swing);
       box(-.17,.46,-gait*.19,.28,.85,.31,5,-gait*.63);
       box(.17,.46,gait*.19,.28,.85,.31,5,gait*.63);
-      if (walk.tool === 0) box(.51,1.39+swing*.36,-.28,.22,.53,.34,1,-swing);
-      else box(.51,1.22,-.39+action*.12,.20,.23,walk.tool === 1 ? .63 : .82,3);
+      if (walk.melee) {
+        box(.51,1.39+swing*.36,-.28,.22,walk.tool === 1 ? .72 : .53,.34,1,-swing);
+      } else box(.51,1.22,-.39+action*.12,.20,.23,walk.tool === 5 ? .82 : .5,3);
     }
     if (rocket) {
       const t = Math.min(1,(now-rocket.start)/rocket.ms);
@@ -1298,6 +1390,12 @@ function start() {
       root.updateMatrix();
       box(0,0,0,.19,.19,.19,3);
       if (t >= 1) rocket = null;
+    }
+    if (charge) {
+      root.position.fromArray(charge.pose);
+      root.rotation.set(0,0,0);
+      root.updateMatrix();
+      box(0,0,0,.22,.22,.22,now % 900 < 200 ? 12 : 3);
     }
     actor.count = actorCount;
     actor.visible = Boolean(actorCount);
@@ -1351,7 +1449,20 @@ function start() {
   catch { throw new Error('The module worker could not start. Serve the project over HTTP and reload.'); }
   worker.onerror = event => fail(`The voxel worker stopped. Reload the yard. ${event.message || ''}`);
   worker.onmessageerror = () => fail('The browser could not read a worker message. Reload the yard.');
-  let ready = false, tickPending = false, stats, previousFrame = 0;
+  let ready = false, tickPending = false, stats, previousFrame = 0, entered = false, destroyed = 0;
+  const weather = document.querySelector('#weather');
+  const weatherToggle = document.querySelector('#weather-toggle');
+  const score = document.querySelector('#destroyed');
+  weather.hidden = params.has('bench') || params.has('clear');
+  weatherToggle.textContent = weather.hidden ? 'Weather · Clear' : 'Weather · Rain';
+  weatherToggle.onclick = () => {
+    weather.hidden = !weather.hidden;
+    weatherToggle.textContent = weather.hidden ? 'Weather · Clear' : 'Weather · Rain';
+  };
+  document.querySelector('#refresh-map').onclick = () => {
+    document.querySelector('#loadout').close();
+    reset();
+  };
   let needsDrawCheck = true;
   const renderBytes = (CHUNKS*2*STATIC_CAP + CHUNKS*BODIES*BODY_CAP + 1)*40;
   const tracked = {
@@ -1359,7 +1470,7 @@ function start() {
     workerAndTransferBytes:7*VOLUME + SLOTS*PACKET_BYTES + 4096 + CHIP_COUNT*61,
     chipCpuGpuBytes:2*(CHIP_COUNT*68 + packed.byteLength + chipGeometry.index.array.byteLength) +
       chipData.byteLength,
-    actorCpuGpuBytes:2*(9*64 + actorColors.array.byteLength + packed.byteLength +
+    actorCpuGpuBytes:2*(10*64 + actorColors.array.byteLength + packed.byteLength +
       chipGeometry.index.array.byteLength),
     telemetryHistogramBytes:params.has('bench') ? 5*1025*4 : 0
   };
@@ -1408,10 +1519,10 @@ function start() {
     } catch (error) { fail(error.message); console.error(error); }
   };
 
-  function shoot(origin,direction,radius,reach,rocket) {
+  function shoot(origin,direction,radius,reach,rocket,charge) {
     const id = ready && !failed ? ledger.accept(performance.now()) : 0;
     bench?.input(Boolean(id));
-    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius,reach,rocket});
+    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius,reach,rocket,charge});
   }
   function reset() {
     if (failed) return;
@@ -1420,6 +1531,8 @@ function start() {
     walk.ready(false);
     walk.reset();
     rocket = null;
+    charge = null;
+    walk.setCharge(false);
     status.textContent = 'Preparing a fresh yard…';
     ledger.reset();
     stage.clear(recycle);
@@ -1471,7 +1584,8 @@ function start() {
     ndc.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
     if (walk.active) {
       const tool = walk.attack(ray.ray,performance.now());
-      if (tool) shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),tool.radius,tool.reach,walk.tool === 2);
+      if (tool) shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),tool.radius,tool.reach,
+        tool.rocket,tool.charge);
       return;
     }
     ray.setFromCamera(ndc,camera);
@@ -1524,6 +1638,12 @@ function start() {
     entry.geometry.setDrawRange(0,entry.count);
   }
   function publish(now) {
+    charge = stage.charge;
+    walk.setCharge(Boolean(charge));
+    if (stage.removed) {
+      destroyed += stage.removed;
+      score.textContent = String(destroyed);
+    }
     if (stage.id === 0) {
       for (let slot = 0; slot < BODIES; slot++) hideBody(slot);
       chipData.fill(0);
@@ -1598,6 +1718,8 @@ function start() {
           ready = true;
           button.disabled = false;
           walk.ready(!bench);
+          if (!entered && !bench && !params.has('orbit')) document.querySelector('#walk').click();
+          entered = true;
           status.textContent = 'Yard open';
         }
       }
@@ -1661,6 +1783,16 @@ test('world addressing, inclusive sphere, radius cap, and immutable anchors', ()
   assert.equal(run(blast(world,32,1,0,NaN,dirty)),0);
   assert.equal(run(blast(world,32,1,0,1e4,dirty)),2);
   assert.equal(world.get(39,1,0),2);
+});
+
+test('the park paving can be excavated down to its permanent foundation', () => {
+  const world = new World(), dirty = new Uint8Array(2);
+  run(seedWorld(world));
+  assert.equal(world.get(32,1,26),8);
+  assert.ok(run(blast(world,32,1,26,2,dirty)) > 1);
+  assert.equal(world.get(32,1,26),0);
+  assert.equal(world.get(32,0,26),13);
+  assert.deepEqual([...dirty],[1,1]);
 });
 
 test('DDA slab entry, boundary direction, parallel exclusion and corner tie', () => {
@@ -1921,11 +2053,13 @@ network run `npm run dev -- --host 0.0.0.0` and open port 5173 on the host's LAN
 Use `npm test` for deterministic engine/protocol tests and `npm run build` followed
 by `npm run preview` for the production build.
 
-Choose **Walk** for an over-the-shoulder camera. Use WASD, the arrow keys, or
+The yard starts with an over-the-shoulder camera. Use WASD, the arrow keys, or
 the on-screen directional pad. Drag to look around and tap to use the selected
 tool. **View** or V switches first and third person. **Orbit** restores the
-overview. Open **Menu** or use Q/E or 1–3 to select the short-range Sledge,
-precision Rifle, or RPG with a visible rocket flight and a wide blast.
+overview. Open **Menu** or use Q/E to choose an item. Press 1–3 to cycle the
+melee, firearm, and explosive groups. C4 places on the first tap and detonates
+on the next. The menu toggles rain and restores the map. The park paving can
+be excavated to the permanent world anchor layer.
 To generate another copy, place `bootstrap.sh` in an empty directory and
 run `bash bootstrap.sh` there.
 
@@ -1946,7 +2080,7 @@ run `bash bootstrap.sh` there.
   island sections, 1 instanced chip mesh, 1 avatar/rocket mesh, 1 ground).
   Framebuffers, driver copies, JS objects, and library
   allocations are outside the tracked buffer estimate.
-- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius,reach,rocket}`,
+- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius,reach,rocket,charge}`,
   `activate{epoch,id}`, `tick{epoch,dx,dz}`, and `pause{epoch}`. Four input credits
   include the executing command. New taps are dropped when all credits are used.
 - Worker sends `mesh{epoch,id,slot,target,quads,buffer}` followed by

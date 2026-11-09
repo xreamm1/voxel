@@ -1,4 +1,4 @@
-:root { font: 15px system-ui,sans-serif; color: #142633; background: #b9e5fc }
+:root { font: 15px system-ui,sans-serif; color: #eff3f4; background: #141422 }
 * { box-sizing: border-box }
 body { margin: 0; overflow: hidden }
 canvas { display: block; width: 100vw; height: 100dvh; touch-action: none }
@@ -8,8 +8,8 @@ header { top: 16px; left: 16px; display: grid; gap: 3px }
 header strong { font-size: clamp(16px,4vw,27px); letter-spacing: .06em }
 header span { font-size: 10px; font-weight: 750; letter-spacing: .16em }
 aside { top: 16px; right: 16px }
-button, footer, pre { padding: 10px 12px; border-radius: 8px; background: #fffc; color: inherit }
-button { border: 1px solid #142633; font: inherit; font-weight: 700; cursor: pointer }
+button, footer, pre { padding: 10px 12px; border-radius: 8px; background: #10151edb; color: inherit }
+button { border: 1px solid #8e98a1; font: inherit; font-weight: 700; cursor: pointer }
 footer { bottom: 16px; left: 16px; right: 16px; width: fit-content; max-width: calc(100% - 32px) }
 pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wrap; font-size: 11px }
 #reticle { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
@@ -20,15 +20,26 @@ pre { top: 76px; right: 16px; max-width: calc(100% - 32px); white-space: pre-wra
 #move button:first-child { grid-column: 2; grid-row: 1 }
 #move button:nth-child(n+2) { grid-row: 2 }
 #tools:not([hidden]) { position: fixed; right: 16px; bottom: 94px; display: flex; align-items: center;
-  gap: 6px; padding: 4px; border-radius: 10px; background: #fffd }
+  gap: 6px; padding: 4px; border-radius: 10px; background: #10151edb; flex-wrap: wrap }
+#categories { display: flex; flex-basis: 100%; gap: 4px; justify-content: center }
+#categories button { min-width: 35px; padding: 4px 8px }
+#categories button[aria-pressed="true"] { background: #e6eaf0; color: #151925 }
 #tool-name { min-width: 76px; text-align: center; font-weight: 750 }
 #loadout { color: #edf5f9; background: #152631; border: 1px solid #55717e;
   border-radius: 14px; max-width: calc(100vw - 24px); padding: 20px }
 #loadout::backdrop { background: #12222db8 }
 #loadout form { float: right }
-.loadout-tools { display: grid; gap: 6px }
-.loadout-tools button { text-align: left }
-.loadout-tools small { display: block; font-size: 10px; letter-spacing: .09em }
+.loadout-tools { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px }
+.loadout-tools section { display: grid; gap: 5px; align-content: start }
+.loadout-tools h3 { margin: 12px 0 4px; font-size: 13px }
+.loadout-tools button { text-align: left; font-size: 13px; padding: 7px }
+.menu-options { display: flex; gap: 6px; flex-wrap: wrap }
+#weather { position: fixed; inset: 0; overflow: hidden; pointer-events: none }
+#weather::before { content: ''; position: absolute; inset: -120px; opacity: .22;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='137' height='113' viewBox='0 0 137 113'%3E%3Cpath stroke='%23b3c9ee' stroke-opacity='.55' d='m17 8 -3 21 m58 21 -3 27 m40 -69 -3 30 m28 36 -3 24 m-88 -8 -3 22 m-38 -65 -2 16'/%3E%3C/svg%3E");
+  animation: rain .28s linear infinite }
+@keyframes rain { to { transform: translate(-15px,113px) } }
+@media (prefers-reduced-motion: reduce) { #weather::before { animation: none } }
 @media (max-width: 500px) {
   header span, header strong { display: none }
   aside { left: 12px; right: auto }

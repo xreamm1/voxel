@@ -14,6 +14,7 @@ const WAIT = Symbol('waiting for transfer credit');
 let epoch = 0, id = 0, applied = -1, job, awaiting = false, timer = null, mask = 0;
 let droppedBodies = 0, lastTick = 0, carry = 0, sliceMax = 0, sliceCount = 0, sliceTotal = 0;
 let queueHigh = 0;
+let charge = null, removed = 0;
 
 function* mesh(source, section, target, cap) {
   let slot;
@@ -40,18 +41,35 @@ function* transaction(command) {
   id = command.id;
   dirty.fill(0);
   mask = 0;
+  removed = 0;
   if (id === 0) {
     yield* seedWorld(world);
     dirty.fill(1);
-  } else if (raycast(world,command.origin,command.direction,hit,slab,
-    Number.isFinite(command.reach) ? Math.max(0,Math.min(100,command.reach)) : Infinity)) {
+  } else {
+    if (command.charge && charge) {
+      hit.set(charge.cell);
+      charge = null;
+    } else {
+      const reach = Number.isFinite(command.reach) ? Math.max(0,Math.min(100,command.reach)) : Infinity;
+      if (!raycast(world,command.origin,command.direction,hit,slab,reach)) return;
+      if (command.charge) {
+        const pose = Array.from(hit,value => value+.5);
+        let axis = 0;
+        for (let i = 1; i < 3; i++) {
+          if (Math.abs(command.direction[i]) > Math.abs(command.direction[axis])) axis = i;
+        }
+        pose[axis] -= Math.sign(command.direction[axis])*.62;
+        charge = {cell:Array.from(hit),pose};
+        return;
+      }
+    }
     if (command.rocket) {
       const x = hit[0]+.5, y = hit[1]+.5, z = hit[2]+.5;
       const ms = Math.max(70,Math.hypot(x-command.origin[0],y-command.origin[1],z-command.origin[2])*9);
       postMessage({type:'launch',epoch,id,origin:command.origin,x,y,z,ms});
       yield ms;
     }
-    const removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
+    removed = yield* blast(world,hit[0],hit[1],hit[2],command.radius,dirty,chips);
     if (removed) yield* support.detach(world,dirty,present);
   }
   for (let section = 0; section < CHUNKS; section++) {
@@ -93,7 +111,7 @@ function pump() {
   sliceCount++;
   sliceTotal += elapsed;
   sliceMax = Math.max(sliceMax,elapsed);
-  if (awaiting) postMessage({type:'end',epoch,id,mask,chips:chips.sample(1)});
+  if (awaiting) postMessage({type:'end',epoch,id,mask,chips:chips.sample(1),charge,removed});
   else if (!waiting) schedule();
 }
 
@@ -125,6 +143,7 @@ self.onmessage = ({data: m}) => {
     timer = null;
     epoch = m.epoch;
     applied = -1;
+    charge = null;
     queue.length = 0;
     queue.push({id:0});
     job = null;

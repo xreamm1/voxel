@@ -55,13 +55,31 @@ export function* seedWorld(world) {
   yield* box(22, 41, 8, 8, 12, 19, 3);
   yield* box(23, 40, 14, 14, 12, 19, 1);
   yield* box(25, 38, 15, 15, 14, 17, 4);
-  yield* box(29, 34, 0, 0, 20, 30, 6);
+  yield* box(17, 46, 0, 0, 19, 31, 13);
+  yield* box(17, 46, 1, 1, 19, 31, 8);
+  yield* box(18, 26, 1, 1, 23, 29, 11);
+  yield* box(37, 45, 1, 1, 23, 29, 11);
   for (const x of [20,38]) {
-    yield* box(x, x+5, 0, 0, 24, 29, 7);
     const tree = x+2;
-    yield* box(tree, tree, 1, 4, 26, 26, 5);
-    yield* box(tree-1, tree+1, 4, 6, 25, 27, 7);
-    yield* box(tree-2, tree+2, 5, 5, 26, 26, 7);
+    yield* box(tree, tree, 2, 5, 26, 26, 9);
+    yield* box(tree-1, tree+1, 5, 7, 25, 27, 11);
+    yield* box(tree-2, tree+2, 6, 6, 26, 26, 7);
+    yield* box(x, x+3, 2, 2, 29, 29, 9);
+  }
+  for (const x of [26,37]) {
+    yield* box(x,x,2,7,21,21,13);
+    yield* box(x,x,2,6,30,30,5);
+    yield* box(x,x,7,7,30,30,12);
+  }
+  yield* box(26,37,8,8,21,21,13);
+  for (const x of [5,46]) {
+    for (let col = x; col <= x+12; col++) {
+      for (let y = 1; y <= 11; y++) {
+        const window = y%6 >= 2 && y%6 <= 4 && (col-x)%4 >= 1 && (col-x)%4 <= 2;
+        world.put(col,y,6,window ? 10 : 9);
+      }
+      yield;
+    }
   }
 }
 

@@ -8,11 +8,13 @@ network run `npm run dev -- --host 0.0.0.0` and open port 5173 on the host's LAN
 Use `npm test` for deterministic engine/protocol tests and `npm run build` followed
 by `npm run preview` for the production build.
 
-Choose **Walk** for an over-the-shoulder camera. Use WASD, the arrow keys, or
+The yard starts with an over-the-shoulder camera. Use WASD, the arrow keys, or
 the on-screen directional pad. Drag to look around and tap to use the selected
 tool. **View** or V switches first and third person. **Orbit** restores the
-overview. Open **Menu** or use Q/E or 1–3 to select the short-range Sledge,
-precision Rifle, or RPG with a visible rocket flight and a wide blast.
+overview. Open **Menu** or use Q/E to choose an item. Press 1–3 to cycle the
+melee, firearm, and explosive groups. C4 places on the first tap and detonates
+on the next. The menu toggles rain and restores the map. The park paving can
+be excavated to the permanent world anchor layer.
 To generate another copy, place `bootstrap.sh` in an empty directory and
 run `bash bootstrap.sh` there.
 
@@ -33,7 +35,7 @@ run `bash bootstrap.sh` there.
   island sections, 1 instanced chip mesh, 1 avatar/rocket mesh, 1 ground).
   Framebuffers, driver copies, JS objects, and library
   allocations are outside the tracked buffer estimate.
-- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius,reach,rocket}`,
+- Main sends `reset{epoch}`, `blast{epoch,id,origin,direction,radius,reach,rocket,charge}`,
   `activate{epoch,id}`, `tick{epoch,dx,dz}`, and `pause{epoch}`. Four input credits
   include the executing command. New taps are dropped when all credits are used.
 - Worker sends `mesh{epoch,id,slot,target,quads,buffer}` followed by

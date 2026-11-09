@@ -36,7 +36,7 @@ function start() {
     throw new Error('The voxel shader could not compile. Reload or try another WebGL 2 browser.');
   };
   const scene = new T.Scene();
-  scene.background = new T.Color('#b9e5fc');
+  scene.background = new T.Color('#171526');
   const camera = new T.PerspectiveCamera(44,1,0.15,220);
   const controls = new OrbitControls(camera,canvas);
   controls.enablePan = false;
@@ -54,8 +54,10 @@ function start() {
 
   const material = new T.RawShaderMaterial({
     glslVersion:T.GLSL3,
-    uniforms:{palette:{value:['#293940','#ffc736','#17b7b3','#ff6b47',
-      '#f2f5ee','#607584','#9bb0ae','#70aa5d'].map(color => new T.Color(color))}},
+    uniforms:{palette:{value:['#293940','#f0ad33','#468a94','#b44539',
+      '#eeeeed','#636b76','#46504b','#396032','#575962','#745143',
+      '#415979','#4a693e','#eef2fb','#777278','#8c794d','#66646d']
+      .map(color => new T.Color(color))}},
     vertexShader:`
       precision highp float;
       precision highp int;
@@ -85,12 +87,13 @@ function start() {
     fragmentShader:`
       precision highp float;
       precision highp int;
-      uniform vec3 palette[8];
+      uniform vec3 palette[16];
       flat in uint materialId;
       flat in float shade;
       out vec4 pixel;
       void main() {
-        vec3 linear = palette[int(materialId & 7u)] * shade;
+        float lighting = materialId == 12u ? 1.0 : 0.57 * shade;
+        vec3 linear = palette[int(materialId & 15u)] * lighting;
         vec3 rgb = mix(12.92 * linear,1.055 * pow(linear,vec3(1.0/2.4))-0.055,
                        step(vec3(0.0031308),linear));
         pixel = vec4(rgb,1.0);
@@ -164,7 +167,7 @@ function start() {
 
   const actorGeometry = chipGeometry.clone();
   const actorColors = actorGeometry.getAttribute('chipMaterial');
-  const actor = new T.InstancedMesh(actorGeometry,chipMaterial,9);
+  const actor = new T.InstancedMesh(actorGeometry,chipMaterial,10);
   actor.instanceMatrix.setUsage(T.DynamicDrawUsage);
   actor.frustumCulled = false;
   actor.count = 1;
@@ -173,7 +176,7 @@ function start() {
   scene.add(actor);
   const root = new T.Object3D(), part = new T.Object3D(), matrix = new T.Matrix4();
   const rocketFrom = new T.Vector3(), rocketTo = new T.Vector3();
-  let rocket = null, actorCount = 0;
+  let rocket = null, actorCount = 0, charge = null;
   function box(x,y,z,sx,sy,sz,color,angle = 0) {
     part.position.set(x,y,z);
     part.scale.set(sx,sy,sz);
@@ -188,7 +191,7 @@ function start() {
     if (walk.thirdPerson) {
       const gait = walk.gait, action = walk.action(now);
       const equip = walk.equipping(now);
-      const swing = walk.tool === 0 ? Math.sin(action*Math.PI)*1.8 + Math.sin(equip*Math.PI)*.8 :
+      const swing = walk.melee ? Math.sin(action*Math.PI)*1.8 + Math.sin(equip*Math.PI)*.8 :
         action*action*.45;
       root.position.set(walk.x,walk.feet+Math.abs(gait)*.055,walk.z);
       root.rotation.y = walk.yaw;
@@ -200,8 +203,9 @@ function start() {
       box(.45,1.24,-gait*.11-swing*.13,.21,.51,.24,4,-gait*.65-swing);
       box(-.17,.46,-gait*.19,.28,.85,.31,5,-gait*.63);
       box(.17,.46,gait*.19,.28,.85,.31,5,gait*.63);
-      if (walk.tool === 0) box(.51,1.39+swing*.36,-.28,.22,.53,.34,1,-swing);
-      else box(.51,1.22,-.39+action*.12,.20,.23,walk.tool === 1 ? .63 : .82,3);
+      if (walk.melee) {
+        box(.51,1.39+swing*.36,-.28,.22,walk.tool === 1 ? .72 : .53,.34,1,-swing);
+      } else box(.51,1.22,-.39+action*.12,.20,.23,walk.tool === 5 ? .82 : .5,3);
     }
     if (rocket) {
       const t = Math.min(1,(now-rocket.start)/rocket.ms);
@@ -210,6 +214,12 @@ function start() {
       root.updateMatrix();
       box(0,0,0,.19,.19,.19,3);
       if (t >= 1) rocket = null;
+    }
+    if (charge) {
+      root.position.fromArray(charge.pose);
+      root.rotation.set(0,0,0);
+      root.updateMatrix();
+      box(0,0,0,.22,.22,.22,now % 900 < 200 ? 12 : 3);
     }
     actor.count = actorCount;
     actor.visible = Boolean(actorCount);
@@ -263,7 +273,20 @@ function start() {
   catch { throw new Error('The module worker could not start. Serve the project over HTTP and reload.'); }
   worker.onerror = event => fail(`The voxel worker stopped. Reload the yard. ${event.message || ''}`);
   worker.onmessageerror = () => fail('The browser could not read a worker message. Reload the yard.');
-  let ready = false, tickPending = false, stats, previousFrame = 0;
+  let ready = false, tickPending = false, stats, previousFrame = 0, entered = false, destroyed = 0;
+  const weather = document.querySelector('#weather');
+  const weatherToggle = document.querySelector('#weather-toggle');
+  const score = document.querySelector('#destroyed');
+  weather.hidden = params.has('bench') || params.has('clear');
+  weatherToggle.textContent = weather.hidden ? 'Weather · Clear' : 'Weather · Rain';
+  weatherToggle.onclick = () => {
+    weather.hidden = !weather.hidden;
+    weatherToggle.textContent = weather.hidden ? 'Weather · Clear' : 'Weather · Rain';
+  };
+  document.querySelector('#refresh-map').onclick = () => {
+    document.querySelector('#loadout').close();
+    reset();
+  };
   let needsDrawCheck = true;
   const renderBytes = (CHUNKS*2*STATIC_CAP + CHUNKS*BODIES*BODY_CAP + 1)*40;
   const tracked = {
@@ -271,7 +294,7 @@ function start() {
     workerAndTransferBytes:7*VOLUME + SLOTS*PACKET_BYTES + 4096 + CHIP_COUNT*61,
     chipCpuGpuBytes:2*(CHIP_COUNT*68 + packed.byteLength + chipGeometry.index.array.byteLength) +
       chipData.byteLength,
-    actorCpuGpuBytes:2*(9*64 + actorColors.array.byteLength + packed.byteLength +
+    actorCpuGpuBytes:2*(10*64 + actorColors.array.byteLength + packed.byteLength +
       chipGeometry.index.array.byteLength),
     telemetryHistogramBytes:params.has('bench') ? 5*1025*4 : 0
   };
@@ -320,10 +343,10 @@ function start() {
     } catch (error) { fail(error.message); console.error(error); }
   };
 
-  function shoot(origin,direction,radius,reach,rocket) {
+  function shoot(origin,direction,radius,reach,rocket,charge) {
     const id = ready && !failed ? ledger.accept(performance.now()) : 0;
     bench?.input(Boolean(id));
-    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius,reach,rocket});
+    if (id) worker.postMessage({type:'blast',epoch:ledger.epoch,id,origin,direction,radius,reach,rocket,charge});
   }
   function reset() {
     if (failed) return;
@@ -332,6 +355,8 @@ function start() {
     walk.ready(false);
     walk.reset();
     rocket = null;
+    charge = null;
+    walk.setCharge(false);
     status.textContent = 'Preparing a fresh yard…';
     ledger.reset();
     stage.clear(recycle);
@@ -383,7 +408,8 @@ function start() {
     ndc.set((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2);
     if (walk.active) {
       const tool = walk.attack(ray.ray,performance.now());
-      if (tool) shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),tool.radius,tool.reach,walk.tool === 2);
+      if (tool) shoot(ray.ray.origin.toArray(),ray.ray.direction.toArray(),tool.radius,tool.reach,
+        tool.rocket,tool.charge);
       return;
     }
     ray.setFromCamera(ndc,camera);
@@ -436,6 +462,12 @@ function start() {
     entry.geometry.setDrawRange(0,entry.count);
   }
   function publish(now) {
+    charge = stage.charge;
+    walk.setCharge(Boolean(charge));
+    if (stage.removed) {
+      destroyed += stage.removed;
+      score.textContent = String(destroyed);
+    }
     if (stage.id === 0) {
       for (let slot = 0; slot < BODIES; slot++) hideBody(slot);
       chipData.fill(0);
@@ -510,6 +542,8 @@ function start() {
           ready = true;
           button.disabled = false;
           walk.ready(!bench);
+          if (!entered && !bench && !params.has('orbit')) document.querySelector('#walk').click();
+          entered = true;
           status.textContent = 'Yard open';
         }
       }

@@ -40,6 +40,16 @@ test('world addressing, inclusive sphere, radius cap, and immutable anchors', ()
   assert.equal(world.get(39,1,0),2);
 });
 
+test('the park paving can be excavated down to its permanent foundation', () => {
+  const world = new World(), dirty = new Uint8Array(2);
+  run(seedWorld(world));
+  assert.equal(world.get(32,1,26),8);
+  assert.ok(run(blast(world,32,1,26,2,dirty)) > 1);
+  assert.equal(world.get(32,1,26),0);
+  assert.equal(world.get(32,0,26),13);
+  assert.deepEqual([...dirty],[1,1]);
+});
+
 test('DDA slab entry, boundary direction, parallel exclusion and corner tie', () => {
   const world = new World(), hit = new Int32Array(3), slab = new Float64Array(3);
   world.put(32,2,3,1);

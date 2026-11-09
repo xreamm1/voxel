@@ -1,19 +1,30 @@
-import {EYE,SPAWN_X,SPAWN_Z} from './motion.js';
+import {EYE,SPAWN_FEET,SPAWN_X,SPAWN_Z} from './motion.js';
 
 export function walking(canvas,camera,controls,home) {
   const button = document.querySelector('#walk'), move = document.querySelector('#move');
   const reticle = document.querySelector('#reticle'), help = document.querySelector('#help');
   const view = document.querySelector('#view'), tools = document.querySelector('#tools');
   const name = document.querySelector('#tool-name'), menu = document.querySelector('#loadout');
+  const groups = [...document.querySelectorAll('[data-group]')];
   const loadout = [
-    {name:'Sledge',radius:2.5,reach:4,cooldown:1617,animation:1617,equip:1000},
-    {name:'Rifle',radius:1,reach:60,cooldown:145,animation:145,equip:0},
-    {name:'RPG',radius:5.5,reach:64,cooldown:650,animation:367,equip:0}
+    {name:'Sledge',group:1,radius:2.5,reach:4,cooldown:1617,animation:1617,equip:1000},
+    {name:'Huge Hammer',group:1,radius:4,reach:5,cooldown:1800,animation:1617,equip:1000},
+    {name:'Pickaxe',group:1,radius:1,reach:4,cooldown:680,animation:550,equip:250},
+    {name:'Pistol',group:2,radius:.7,reach:35,cooldown:300,animation:190,equip:233},
+    {name:'Rifle',group:2,radius:1,reach:60,cooldown:145,animation:145,equip:0},
+    {name:'RPG',group:3,radius:5.5,reach:64,cooldown:650,animation:367,equip:0,rocket:true},
+    {name:'C4',group:3,radius:6,reach:5,cooldown:450,animation:320,equip:0,charge:true}
   ];
   const keys = new Set(), touches = new Map();
   const movement = new Float64Array(2);
   let yaw, pitch, x, z, feet, phase = 0, stride = 0, swing = -Infinity;
-  let selected = 2, third = true, equippedAt = -Infinity;
+  let selected = 5, third = true, equippedAt = -Infinity, chargePlaced = false;
+  function updateLabel() {
+    name.textContent = loadout[selected].charge && chargePlaced ? 'Detonate C4' : loadout[selected].name;
+    for (const group of groups) {
+      group.setAttribute('aria-pressed',String(Number(group.dataset.group) === loadout[selected].group));
+    }
+  }
   function equip(index) {
     const next = (index+loadout.length)%loadout.length;
     if (next !== selected) {
@@ -21,8 +32,14 @@ export function walking(canvas,camera,controls,home) {
       equippedAt = performance.now();
       swing = -Infinity;
     }
-    name.textContent = loadout[selected].name;
+    updateLabel();
   }
+  function selectGroup(group) {
+    const current = loadout[selected].group === group ? selected+1 : 0;
+    const next = loadout.findIndex((tool,index) => tool.group === group && index >= current);
+    equip(next < 0 ? loadout.findIndex(tool => tool.group === group) : next);
+  }
+  for (const group of groups) group.onclick = () => selectGroup(Number(group.dataset.group));
   equip(selected);
   document.querySelector('#previous-tool').onclick = () => equip(selected-1);
   document.querySelector('#next-tool').onclick = () => equip(selected+1);
@@ -46,6 +63,8 @@ export function walking(canvas,camera,controls,home) {
     get x() { return x; }, get z() { return z; }, get feet() { return feet; },
     get yaw() { return yaw; }, get gait() { return Math.sin(phase)*stride; },
     get tool() { return selected; },
+    get melee() { return loadout[selected].group === 1; },
+    setCharge(placed) { chargePlaced = placed; updateLabel(); },
     attack(ray,now) {
       const tool = loadout[selected];
       if (now-swing < tool.cooldown || now-equippedAt < tool.equip) return;
@@ -60,7 +79,8 @@ export function walking(canvas,camera,controls,home) {
       return duration ? Math.max(0,1-(now-equippedAt)/duration) : 0;
     },
     reset() {
-      yaw = pitch = feet = 0;
+      yaw = pitch = 0;
+      feet = SPAWN_FEET;
       phase = stride = 0;
       swing = -Infinity;
       equippedAt = -Infinity;
@@ -131,7 +151,7 @@ export function walking(canvas,camera,controls,home) {
       if (event.code === 'KeyQ') equip(selected-1);
       if (event.code === 'KeyE') equip(selected+1);
       if (event.code === 'KeyV') toggleView();
-      if (/^Digit[123]$/.test(event.code)) equip(Number(event.code.at(-1))-1);
+      if (/^Digit[123]$/.test(event.code)) selectGroup(Number(event.code.at(-1)));
     }
     const key = bindings[event.code];
     if (!key) return;

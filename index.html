@@ -6,6 +6,7 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="./style.css">
 <canvas aria-label="Interactive voxel construction yard"></canvas>
+<div id="weather" aria-hidden="true"></div>
 <header><strong>KNOCKOUT YARD</strong><span>01 / DEMOLITION SITE</span></header>
 <aside><button id="view" hidden aria-label="First person">View</button> <button id="walk" disabled>Walk</button>
 <button id="reset" disabled>Reset yard</button> <button id="menu">Menu</button></aside>
@@ -13,15 +14,28 @@
   <button id="previous-tool" aria-label="Previous tool">‹</button>
   <output id="tool-name"></output>
   <button id="next-tool" aria-label="Next tool">›</button>
+  <div id="categories">
+    <button data-group="1" aria-label="Melee">1</button>
+    <button data-group="2" aria-label="Firearms">2</button>
+    <button data-group="3" aria-label="Explosives">3</button>
+  </div>
 </div>
 <dialog id="loadout">
   <form method="dialog"><button aria-label="Close menu">×</button></form>
-  <h2>Yard loadout</h2>
-  <p>Pick a demolition tool. Q/E cycles the loadout.</p>
+  <h2>Demolition menu</h2>
+  <p>Voxels destroyed <strong id="destroyed">0</strong></p>
+  <div class="menu-options">
+    <button id="weather-toggle">Weather · Rain</button>
+    <button id="refresh-map">Refresh map</button>
+  </div>
   <div class="loadout-tools">
-    <button data-tool="0"><small>1 · MELEE</small>Sledge</button>
-    <button data-tool="1"><small>2 · FIREARMS</small>Rifle</button>
-    <button data-tool="2"><small>3 · EXPLOSIVES</small>RPG</button>
+    <section><h3>1 · Melee</h3>
+      <button data-tool="0">Sledge</button><button data-tool="1">Huge Hammer</button>
+      <button data-tool="2">Pickaxe</button></section>
+    <section><h3>2 · Firearms</h3>
+      <button data-tool="3">Pistol</button><button data-tool="4">Rifle</button></section>
+    <section><h3>3 · Explosives</h3>
+      <button data-tool="5">RPG</button><button data-tool="6">C4</button></section>
   </div>
 </dialog>
 <div id="reticle" hidden aria-hidden="true">+</div>

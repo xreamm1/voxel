@@ -1,15 +1,15 @@
 import {WIDTH,SIZE,STEP} from './engine.js';
 
 export const CHIP_COUNT = 48, CHIP_STRIDE = 5, CHIP_FLOOR = .53;
-export const SPAWN_X = 32, SPAWN_Z = 26, EYE = 1.65;
+export const SPAWN_X = 32, SPAWN_Z = 26, SPAWN_FEET = 2, EYE = 1.65;
 const RADIUS = .3, SPEED = 5;
 
 export class Walker {
   x = SPAWN_X;
   z = SPAWN_Z;
-  feet = 0;
+  feet = SPAWN_FEET;
 
-  reset() { this.x = SPAWN_X; this.z = SPAWN_Z; this.feet = 0; }
+  reset() { this.x = SPAWN_X; this.z = SPAWN_Z; this.feet = SPAWN_FEET; }
 
   solid(world,x,y,z) {
     const loX = Math.floor(x-RADIUS), hiX = Math.floor(x+RADIUS);
